@@ -167,6 +167,75 @@ def init_linear(in_size, out_size, do_bias=True, mat_init_value=None,
   return (w, b)
 
 
+def two_stage_masked_linear(W1, mask1, W2, mask2, bias,
+                W1name="W1", W2name="W2", biasname="b"
+                normalized=False, collections=None,
+                trainable=True):
+  """Two-stage (affine) factorized transformation with masked weights
+
+  Implements y = (x * W1*mask1) * W2*mask2 + b
+  If mask1 / mask2 are None, None will be returned.
+
+  Args:
+    W1, mask1, W2, mask2, bias : weight matrices and bias vector initial settings. Masks are optional (set to None if omitted)
+    normalized (optional): Option to divide out by the norms of the rows of W.
+    name (optional): The name prefix to add to variables.
+    collections (optional): List of additional collections. (Placed in
+      tf.GraphKeys.GLOBAL_VARIABLES already, so no need for that.)
+
+  Returns:
+    Returns nodes (W1, mask1, W2, mask2, bias)
+  """
+
+  if normalized:
+    w_collections = [tf.GraphKeys.GLOBAL_VARIABLES, "norm-variables"]
+    if collections:
+      w_collections += collections
+    W1 = tf.Variable(W1, name=W1name, collections=w_collections,
+                    trainable=trainable)
+    W1 = tf.nn.l2_normalize(W1, dim=0) # x W, so xW_j = \sum_i x_bi W_ij
+  else:
+    w_collections = [tf.GraphKeys.GLOBAL_VARIABLES]
+    if collections:
+      w_collections += collections
+    W1 = tf.Variable(W1, name=W1name, collections=w_collections,
+                    trainable=trainable)
+
+  if mask1:
+    mask1name = W1name + "_mask"
+    mask1 = tf.Variable(mask1, name=mask1name, collections=collections,
+                        trainable=False)
+
+  if W2:
+    if normalized:
+      w_collections = [tf.GraphKeys.GLOBAL_VARIABLES, "norm-variables"]
+      if collections:
+        w_collections += collections
+      W2 = tf.Variable(W2, name=W1name, collections=w_collections,
+                      trainable=trainable)
+      W2 = tf.nn.l2_normalize(W2, dim=0) # x W, so xW_j = \sum_i x_bi W_ij
+    else:
+      w_collections = [tf.GraphKeys.GLOBAL_VARIABLES]
+      if collections:
+        w_collections += collections
+      W2 = tf.Variable(W2, name=W1name, collections=w_collections,
+                      trainable=trainable)
+
+    if mask2:
+      mask2name = W2name + "_mask"
+      mask2 = tf.Variable(mask2, name=mask2name, collections=collections,
+                          trainable=False)
+
+  b_collections = [tf.GraphKeys.GLOBAL_VARIABLES]
+  if collections:
+    b_collections += collections
+  bias = tf.Variable(bias, name=biasname,
+                  collections=b_collections,
+                  trainable=trainable)
+
+  return (W1, mask1, W2, mask2, bias)
+
+
 def write_data(data_fname, data_dict, use_json=False, compression=None):
   """Write data in HD5F format.
 
@@ -202,30 +271,26 @@ def write_data(data_fname, data_dict, use_json=False, compression=None):
       raise
 
 
-def read_data(data_fname, reduce_timesteps_to=None):
-  """ Read saved data in HDF5 format.
+def read_data(data_fname):
+  """ Read saved data in HDF5 format. Nested groups become nested dicts
 
   Args:
     data_fname: The filename of the file from which to read the data.
-    reduce_timesteps_to: For debugging, keep only first N timesteps
   Returns:
     A dictionary whose keys will vary depending on dataset (but should
     always contain the keys 'train_data' and 'valid_data') and whose
     values are numpy arrays.
   """
 
+  def unpack(r):
+    if type(r) is h5py.Group or type(r) is h5py.File:
+      return {k: unpack(v) for k, v in r.items()}
+    else:
+      return np.array(r)
+
   try:
     with h5py.File(data_fname, 'r') as hf:
-      data_dict = {k: np.array(v) for k, v in hf.items()}
-
-      if reduce_timesteps_to is not None:
-        keys = ['train_truth', 'train_ext_input', 'train_data',
-                'valid_truth', 'valid_ext_input', 'valid_data']
-        for k in keys:
-          if k in data_dict and data_dict[k].shape[1] > reduce_timesteps_to:
-            data_dict[k] = data_dict[k][:, 0:reduce_timesteps_to, :]
-
-      return data_dict
+      return unpack(hf)
   except IOError:
     print("Cannot open %s for reading." % data_fname)
     raise
@@ -271,7 +336,15 @@ def read_datasets(data_path, data_fname_stem, reduce_timesteps_to=None):
   print ('loading data from ' + data_path + ' with stem ' + data_fname_stem)
   for fname in fnames:
     if fname.startswith(data_fname_stem):
-      data_dict = read_data(os.path.join(data_path,fname), reduce_timesteps_to)
+      data_dict = read_data(os.path.join(data_path,fname))
+
+      if reduce_timesteps_to is not None:
+        keys = ['train_truth', 'train_ext_input', 'train_data',
+                'valid_truth', 'valid_ext_input', 'valid_data']
+        for k in keys:
+          if k in data_dict and data_dict[k].shape[1] > reduce_timesteps_to:
+            data_dict[k] = data_dict[k][:, 0:reduce_timesteps_to, :]
+
       idx = len(data_fname_stem) + 1
       key = fname[idx:]
       data_dict['data_dim'] = data_dict['train_data'].shape[2]
@@ -285,7 +358,6 @@ def read_datasets(data_path, data_fname_stem, reduce_timesteps_to=None):
 
   print (str(len(dataset_dict)) + ' datasets loaded')
   return dataset_dict
-
 
 # NUMPY utility functions
 def list_t_bxn_to_list_b_txn(values_t_bxn):

@@ -98,6 +98,11 @@ IC_PRIOR_VAR_SCALE = 0.1
 IC_PRIOR_VAR_MAX = 0.1
 IC_POST_VAR_MIN = 0.0001      # protection from KL blowing up
 
+# two_stage_readout : subpopulation specific readout and readout matrices
+DO_SUBPOP_READOUT = False
+DO_SUBPOP_READIN = False
+
+# debugging
 TF_DEBUG_CLI = False
 TF_DEBUG_TENSORBOARD = False
 TF_DEBUG_TENSORBOARD_HOSTPORT = 'localhost:6064'
@@ -415,6 +420,12 @@ flags.DEFINE_integer("l2_start_step", L2_START_STEP,
 flags.DEFINE_integer("l2_increase_steps", L2_INCREASE_STEPS,
                      "Increase weight of l2 cost to avoid local minimum.")
 
+ # two_stage_readout : subpopulation specific readout and readout matrices
+ flags.DEFINE_boolean("do_subpop_readin", DO_SUBPOP_READIN,
+                      "Factor the readin matrices using subpopulations")
+ flags.DEFINE_boolean("do_subpop_readout", DO_SUBPOP_READOUT,
+                      "Factor the readout matrices using subpopulations")
+
 # DEBUGGING
 flags.DEFINE_boolean("tf_debug_cli", TF_DEBUG_CLI, "Whether to wrap tf.session in CLI tfdbg?")
 flags.DEFINE_boolean("tf_debug_tensorboard", TF_DEBUG_TENSORBOARD, "Whether to wrap tf.session in GUI Tensorboard debugger?")
@@ -422,10 +433,11 @@ flags.DEFINE_string("tf_debug_tensorboard_hostport", TF_DEBUG_TENSORBOARD_HOSTPO
 flags.DEFINE_string("tf_debug_dump_root", TF_DEBUG_DUMP_ROOT, "Location to dump TF debugging information")
 flags.DEFINE_boolean("debug_verbose", DEBUG_VERBOSE, "Whether to print verbose debugging information")
 flags.DEFINE_integer("debug_reduce_timesteps_to", DEBUG_REDUCE_TIMESTEPS_TO, "For debugging, artificially keep only this many timesteps to reduce graph size")
+
 FLAGS = flags.FLAGS
 
 
-def build_model(hps, kind="train", datasets=None):
+def build_model(hps, kind="train", datasets=None, shared_data=None):
   """Builds a model from either random initialization, or saved parameters.
 
   Args:
@@ -442,7 +454,7 @@ def build_model(hps, kind="train", datasets=None):
   if build_kind == "write_model_params":
     build_kind = "train"
   with tf.variable_scope("LFADS", reuse=None):
-    model = LFADS(hps, kind=build_kind, datasets=datasets)
+    model = LFADS(hps, kind=build_kind, datasets=datasets, shared_data=shared_data)
 
   if not os.path.exists(hps.lfads_save_dir):
     print("Save directory %s does not exist, creating it." % hps.lfads_save_dir)
@@ -600,12 +612,15 @@ def build_hyperparameter_dict(flags):
   d['l2_start_step'] = flags.l2_start_step
   d['l2_increase_steps'] = flags.l2_increase_steps
 
+  # two_stage_readout : subpopulation specific readout and readout matrices
+  d['do_subpop_readin'] = flags.do_subpop_readin
+  d['do_subpop_readout'] = flags.do_subpop_readout
+
   # Debugging
   d['debug_verbose'] = flags.debug_verbose
   d['debug_reduce_timesteps_to'] = flags.debug_reduce_timesteps_to
 
   return d
-
 
 class hps_dict_to_obj(dict):
   """Helper class allowing us to access hps dictionary more easily."""
@@ -619,7 +634,7 @@ class hps_dict_to_obj(dict):
     self[key] = value
 
 
-def train(hps, datasets):
+def train(hps, datasets, shared_data=None):
   """Train the LFADS model.
 
   Args:
@@ -627,7 +642,7 @@ def train(hps, datasets):
     datasets: A dictionary of data dictionaries.  The dataset dict is simply a
       name(string)-> data dictionary mapping (See top of lfads.py).
   """
-  model = build_model(hps, kind="train", datasets=datasets)
+  model = build_model(hps, kind="train", datasets=datasets, shared_data=shared_data)
   if hps.do_reset_learning_rate:
     sess = tf.get_default_session()
     sess.run(model.learning_rate.initializer)
@@ -635,7 +650,7 @@ def train(hps, datasets):
   model.train_model(datasets)
 
 
-def write_model_runs(hps, datasets, output_fname=None, push_mean=False):
+def write_model_runs(hps, datasets, shared_data=None, output_fname=None, push_mean=False):
   """Run the model on the data in data_dict, and save the computed values.
 
   LFADS generates a number of outputs for each examples, and these are all
@@ -659,11 +674,11 @@ def write_model_runs(hps, datasets, output_fname=None, push_mean=False):
       the trained model. False is used for posterior_sample_and_average, True
       is used for posterior_push_mean.
   """
-  model = build_model(hps, kind=hps.kind, datasets=datasets)
+  model = build_model(hps, kind=hps.kind, datasets=datasets, shared_data=None)
   model.write_model_runs(datasets, output_fname, push_mean)
 
 
-def write_model_samples(hps, datasets, dataset_name=None, output_fname=None):
+def write_model_samples(hps, datasets, shared_data=None, dataset_name=None, output_fname=None):
   """Use the prior distribution to generate samples from the model.
   Generates batch_size number of samples (set through FLAGS).
 
@@ -695,11 +710,11 @@ def write_model_samples(hps, datasets, dataset_name=None, output_fname=None):
   else:
     if dataset_name not in datasets.keys():
       raise ValueError("Invalid dataset name '%s'."%(dataset_name))
-  model = build_model(hps, kind=hps.kind, datasets=datasets)
+  model = build_model(hps, kind=hps.kind, datasets=datasets, shared_data=shared_data)
   model.write_model_samples(dataset_name, output_fname)
 
 
-def write_model_parameters(hps, output_fname=None, datasets=None):
+def write_model_parameters(hps, output_fname=None, datasets=None, shared_data=None):
   """Save all the model parameters
 
   Save all the parameters to hps.lfads_save_dir.
@@ -718,7 +733,7 @@ def write_model_parameters(hps, output_fname=None, datasets=None):
   fname = os.path.join(hps.lfads_save_dir, output_fname)
   print("Writing model parameters to: ", fname)
   # save the optimizer params as well
-  model = build_model(hps, kind="write_model_params", datasets=datasets)
+  model = build_model(hps, kind="write_model_params", datasets=datasets, shared_data=shared_data)
   model_params = model.eval_model_parameters(use_nested=False,
                                              include_strs="LFADS")
   utils.write_data(fname, model_params, compression=None)
@@ -734,7 +749,8 @@ def clean_data_dict(data_dict):
   """
 
   keys = ['train_truth', 'train_ext_input', 'valid_data',
-          'valid_truth', 'valid_ext_input', 'valid_train']
+          'valid_truth', 'valid_ext_input', 'valid_train',
+          'subpop_id']
   for k in keys:
     if k not in data_dict:
       data_dict[k] = None
@@ -742,7 +758,7 @@ def clean_data_dict(data_dict):
   return data_dict
 
 
-def load_datasets(data_dir, data_filename_stem, reduce_timesteps_to=None):
+def load_datasets(data_dir, data_filename_stem, hps):
   """Load the datasets from a specified directory.
 
   Example files look like
@@ -754,17 +770,23 @@ def load_datasets(data_dir, data_filename_stem, reduce_timesteps_to=None):
   dataset['first_day'] -> (first day data dictionary)
   dataset['second_day'] -> (first day data dictionary)
 
+  Also converts variables nested as
+  "/alignment_rates_to_subpopulations/subpopulation_%d"
+  into an ordered list over all subpopulations in
+  datasets['alignment_rates_to_subpopulations'].
+
   Args:
     data_dir: The directory from which to load the datasets.
     data_filename_stem: The stem of the filename for the datasets.
-    reduce_timesteps_to: For debugging, keep only first N timesteps
+    hps: Hyperparameters dict
 
   Returns:
     datasets: a dataset dictionary, with one name->data dictionary pair for
     each dataset file.
   """
   print("Reading data from ", data_dir)
-  datasets = utils.read_datasets(data_dir, data_filename_stem, reduce_timesteps_to)
+  datasets = utils.read_datasets(data_dir, data_filename_stem, hps.reduce_timesteps_to)
+
   for k, data_dict in datasets.items():
     datasets[k] = clean_data_dict(data_dict)
 
@@ -782,6 +804,21 @@ def load_datasets(data_dir, data_filename_stem, reduce_timesteps_to=None):
 
   return datasets
 
+def read_shared_data(data_path):
+  """Reads contents of shared_data.h5 file
+
+  Args:
+    data_dir: The directory from which to load the datasets.
+
+  Returns:
+    shared_data: A dictionary with all data from h5 file
+  """
+
+  filename = os.path.join(data_path, 'shared_data.h5')
+  if os.path.exists(filename):
+    return read_data(filename)
+  else:
+    return {}
 
 def has_bad_value(datum, tensor):
   """A predicate for whether a tensor consists of any large numerical values.
@@ -826,6 +863,7 @@ def main(_):
   if kind in ["train", "posterior_sample_and_average", "posterior_push_mean",
               "prior_sample", "write_model_params"]:
     datasets = load_datasets(hps.data_dir, hps.data_filename_stem, hps.debug_reduce_timesteps_to)
+    shared_data = read_shared_data(hps.data_dir)
   else:
     raise ValueError('Kind {} is not supported.'.format(kind))
 
@@ -874,21 +912,20 @@ def main(_):
   with sess.as_default():
     with tf.device(hps.device):
       if kind == "train":
-        train(hps, datasets)
+        train(hps, datasets, shared_data)
       elif kind == "posterior_sample_and_average":
-        write_model_runs(hps, datasets, hps.output_filename_stem,
+        write_model_runs(hps, datasets, shared_data, hps.output_filename_stem,
                          push_mean=False)
       elif kind == "posterior_push_mean":
-        write_model_runs(hps, datasets, hps.output_filename_stem,
+        write_model_runs(hps, datasets, shared_data, hps.output_filename_stem,
                          push_mean=True)
       elif kind == "prior_sample":
-        write_model_samples(hps, datasets, hps.output_filename_stem)
+        write_model_samples(hps, datasets, shared_data, hps.output_filename_stem)
       elif kind == "write_model_params":
-        write_model_parameters(hps, hps.output_filename_stem, datasets)
+        write_model_parameters(hps, hps.output_filename_stem, datasets, shared_data)
       else:
         assert False, ("Kind %s is not implemented. " % kind)
 
 
 if __name__ == "__main__":
     tf.app.run()
-

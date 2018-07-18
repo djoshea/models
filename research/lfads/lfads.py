@@ -43,7 +43,7 @@ The nested dictionary is the DATA DICTIONARY, which has the following keys:
      output adapter for each dataset. These matrices, if provided, must be of
      size [data_dim x factors] where data_dim is the number of neurons recorded
      on that day, and factors is chosen and set through the '--factors' flag.
-   'alignment_bias_c' - See alignment_matrix_cxf.  This bias will used to
+   'bias_c' - See alignment_matrix_cxf.  This bias will used to
      the offset for the alignment transformation.  It will *subtract* off the
      bias from the data, so pca style inits can align factors across sessions.
 
@@ -277,7 +277,7 @@ class LFADS(object):
   event counts).
   """
 
-  def __init__(self, hps, kind="train", datasets=None):
+  def __init__(self, hps, kind="train", datasets=None, shared_data=None):
     """Create an LFADS model.
 
        train - a model for training, sampling of posteriors is used
@@ -358,148 +358,410 @@ class LFADS(object):
       used_in_factors_dim = factors_dim
       in_identity_if_poss = False
 
-    with tf.variable_scope("readin"):
+    if hps.do_subpop_readin:
+      # check all subpopulation data and sizes up front:
+      #
+      # readin_matrix_cxs: C x S, initial guess for readin matrix mapping
+      #   from neurons to subfactors. Entries must be zero if neuron c is not
+      #   in the subpopulation that owns column s
+      # readin_matrix_cxs_mask: C x S, which terms in readin_matrix_cxs
+      #   shall be non-zero (and trainable)
+      # bias_c: C x 1, bias to be subtracted from each neuron
+      # readin_matrix_sxf : S x F subfactor to factors matrix
+
       for d, name in enumerate(dataset_names):
         data_dim = hps.dataset_dims[name]
-        in_mat_cxf = None
-        in_bias_1xf = None
-        align_bias_1xc = None
 
-        if datasets and 'alignment_matrix_cxf' in datasets[name].keys():
-          dataset = datasets[name]
-          if hps.do_train_readin:
-              print("Initializing trainable readin matrix with alignment matrix" \
-                    " provided for dataset:", name)
-          else:
-              print("Setting non-trainable readin matrix to alignment matrix" \
-                    " provided for dataset:", name)
-          in_mat_cxf = dataset['alignment_matrix_cxf'].astype(np.float32)
-          if in_mat_cxf.shape != (data_dim, factors_dim):
-            raise ValueError("""Alignment matrix must have dimensions %d x %d
-            (data_dim x factors_dim), but currently has %d x %d."""%
-                             (data_dim, factors_dim, in_mat_cxf.shape[0],
-                              in_mat_cxf.shape[1]))
-        else:
-          raise ValueError("alignment_matrix_cxf not found for dataset ", name)
+        # load all the subpopulation info at once
+        if 'readin_matrix_cxs' not in dataset.keys():
+          raise ValueError("readin_matrix_cxs not found for dataset ",
+                           name)
+        readin_matrix_cxs =
+          dataset['readin_matrix_cxs'].astype(np.float32)
+        # determine the number of subfactors from the first matrix
+        subfactors_dim = readin_matrix_cxs.shape[1]
+        if readin_matrix_cxs.shape != (data_dim, subfactors_dim):
+          raise ValueError("""readin_matrix_cxs for dataset %s must have \
+              dimensions %d x %d (data_dim x subfactors_dim), but \
+              currently has %d x %d."""%
+                           (data_dim, subfactors_dim,
+                            readin_matrix_cxs.shape[0],
+                            readin_matrix_cxs.shape[1]))
 
-        if datasets and 'alignment_bias_c' in datasets[name].keys():
+        if 'readin_matrix_cxs_mask' not in dataset.keys():
+          raise ValueError("readin_matrix_cxs not found for dataset ",
+                           name)
+        readin_matrix_cxs_mask =
+          dataset['readin_matrix_cxs_mask'].astype(np.bool)
+        if readin_matrix_cxs_mask.shape != (data_dim, subfactors_dim):
+          raise ValueError("""readin_matrix_cxs_mask for dataset %s \
+              must have \
+              dimensions %d x %d (data_dim x subfactors_dim), but \
+              currenty has %d x %d."""%
+                           (data_dim, subfactors_dim,
+                            readin_matrix_cxs_mask.shape[0],
+                            readin_matrix_cxs_mask.shape[1]))
+
+        # check that all masked out values are actually zero
+        if np.any(readin_matrix_cxs[
+            np.logical_not(readin_matrix_cxs_mask)]):
+            raise ValueError("readin_matrix_cxs must be zero where \
+              readin_matrix_cxs_mask is False for dataset %s"%(name,))
+
+        if 'bias_c' not in dataset.keys():
+          raise ValueError("bias_c not found for dataset ",
+                           name)
+        bias_c =
+          dataset['bias_c'].astype(np.float32)
+        if bias_c.shape != (data_dim,):
+          raise ValueError("""bias_c for dataset %s must have \
+              dimensions %d (data_dim), but \
+              currently has %d x %d."""%
+                           (data_dim, bias_c.shape[0]))
+
+        if 'readin_matrix_sxf' not in dataset.keys():
+          raise ValueError("readin_matrix_sxf not found for dataset ",
+                           name)
+        readin_matrix_sxf =
+          dataset['readin_matrix_sxf'].astype(np.float32)
+        if readin_matrix_sxf.shape != (subfactors_dim, factors_dim):
+          raise ValueError("""readin_matrix_sxf for dataset %s must have \
+              dimensions %d x %d (subfactors_dim x factors_dim), but \
+              has %d x %d."""%
+                           (subfactors_dim, factors_dim,
+                            readin_matrix_sxf.shape[0],
+                            readin_matrix_sxf.shape[1]))
+
+      with tf.variable_scope("subpopulation_readin"):
+        # first construct rates --> subpop factors
+        for d, name in enumerate(dataset_names):
+          data_dim = hps.dataset_dims[name]
           dataset = datasets[name]
-          if hps.do_train_readin:
-            print("Initializing trainable readin bias with alignment bias " \
-                  "provided for dataset:", name)
-          else:
-            print("Setting non-trainable readin bias to alignment bias " \
-                  "provided for dataset:", name)
-          align_bias_c = dataset['alignment_bias_c'].astype(np.float32)
+          readin_matrix_cxs =
+            dataset['readin_matrix_cxs'].astype(np.float32)
+          readin_matrix_cxs_mask =
+            dataset['readin_matrix_cxs_mask'].astype(np.bool)
+          bias_c =
+            dataset['bias_c'].astype(np.float32)
+          readin_matrix_sxf =
+            dataset['readin_matrix_sxf'].astype(np.float32)
+
+          # (data - alignment_bias) * W1 * W2
+          # data * W1 * W2 - alignment_bias * W1 * W2
+          # So b = -alignment_bias * W1 * W2 to accommodate PCA style offset.
           align_bias_1xc = np.expand_dims(align_bias_c, axis=0)
-          if align_bias_1xc.shape[1] != data_dim:
-            raise ValueError("""Alignment bias must have dimensions %d
-            (data_dim), but currently has %d."""%
-                             (data_dim, in_mat_cxf.shape[0]))
-          if in_mat_cxf is not None and align_bias_1xc is not None:
-            # (data - alignment_bias) * W_in
-            # data * W_in - alignment_bias * W_in
-            # So b = -alignment_bias * W_in to accommodate PCA style offset.
-            in_bias_1xf = -np.dot(align_bias_1xc, in_mat_cxf)
-        else:
-          raise ValueError("alignment_bias_c not found for dataset ", name)
+          in_bias_1xf = -np.dot(align_bias_1xc, readin_matrix_cxs * )
 
-        if hps.do_train_readin:
-            # only add to IO transformations collection only if we want it to be
-            # learnable, because IO_transformations collection will be trained
-            # when do_train_io_only
-            collections_readin=['IO_transformations']
-        else:
-            collections_readin=None
+          readin_matrix_sxf =
+            dataset['readin_matrix_sxf'].astype(np.float32)
 
-        in_fac_lin = init_linear(data_dim, used_in_factors_dim,
-                                 do_bias=True,
-                                 mat_init_value=in_mat_cxf,
-                                 bias_init_value=in_bias_1xf,
-                                 identity_if_possible=in_identity_if_poss,
-                                 normalized=False, name="x_2_infac_"+name,
-                                 collections=collections_readin,
-                                 trainable=hps.do_train_readin)
-        in_fac_W, in_fac_b = in_fac_lin
-        fns_in_fac_Ws[d] = makelambda(in_fac_W)
-        fns_in_fac_bs[d] = makelambda(in_fac_b)
+          if hps.do_train_readin:
+              print("Initializing trainable subpopulation readin matrices \ with alignment matrices provided for dataset ", name)
+              # only add to IO transformations collection only if we want it to be
+              # learnable, because IO_transformations collection will be trained
+              # when do_train_io_only
+              collections_readin=['IO_transformations']
+          else:
+              print("Setting non-trainable subpopulation readin matrices to alignment matrices" \
+                    " provided for dataset:", name)
+              collections_readin=[]
 
+          W1, mask1, W2, _, bias = two_stage_masked_linear(W1=readin_matrix_cxs,
+                        mask1=readin_matrix_cxs_mask,
+                        W2=readin_matrix_sxf,
+                        mask2=None,
+                        bias=in_bias_1xf,
+                        W1name="W_cxs", W2name="W_sxf", biasname="bias_1xf"
+                        normalized=False, collections=['IO_transformations'],
+                        trainable=True)
+
+          W1masked = tf.multiply(W1, tf.cast(mask1, dtype=W1.dtype),
+              name="W_cxs_masked")
+          in_fac_W = tf.matmul(W1masked, W2, name="W_cxs_masked_times_W_sxf")
+          in_fac_b = b1
+
+          fns_in_fac_Ws[d] = makelambda(in_fac_W)
+          fns_in_fac_bs[d] = makelambda(in_fac_b)
+          preds[d] = tf.equal(tf.constant(name), self.dataName)
+
+        pf_pairs_in_fac_Ws = zip(preds, fns_in_fac_Ws)
+        pf_pairs_in_fac_bs = zip(preds, fns_in_fac_bs)
+
+        this_in_fac_W = tf.case(pf_pairs_in_fac_Ws, exclusive=True)
+        this_in_fac_b = tf.case(pf_pairs_in_fac_bs, exclusive=True)
+
+    else: # not do_subpop_readin
+      # original one stage readin matrices from neurons --> in factors
+      with tf.variable_scope("readin"):
+        for d, name in enumerate(dataset_names):
+          data_dim = hps.dataset_dims[name]
+          in_mat_cxf = None
+          in_bias_1xf = None
+          align_bias_1xc = None
+
+          if datasets and 'alignment_matrix_cxf' in datasets[name].keys():
+            dataset = datasets[name]
+            if hps.do_train_readin:
+                print("Initializing trainable readin matrix with alignment matrix" \
+                      " provided for dataset:", name)
+            else:
+                print("Setting non-trainable readin matrix to alignment matrix" \
+                      " provided for dataset:", name)
+            in_mat_cxf = dataset['alignment_matrix_cxf'].astype(np.float32)
+            if in_mat_cxf.shape != (data_dim, factors_dim):
+              raise ValueError("""Alignment matrix must have dimensions %d x %d
+              (data_dim x factors_dim), but currently has %d x %d."""%
+                               (data_dim, factors_dim, in_mat_cxf.shape[0],
+                                in_mat_cxf.shape[1]))
+          else:
+            raise ValueError("alignment_matrix_cxf not found for dataset ", name)
+
+          if datasets and 'bias_c' in datasets[name].keys():
+            dataset = datasets[name]
+            if hps.do_train_readin:
+              print("Initializing trainable readin bias with alignment bias " \
+                    "provided for dataset:", name)
+            else:
+              print("Setting non-trainable readin bias to alignment bias " \
+                    "provided for dataset:", name)
+            align_bias_c = dataset['bias_c'].astype(np.float32)
+            align_bias_1xc = np.expand_dims(align_bias_c, axis=0)
+            if align_bias_1xc.shape[1] != data_dim:
+              raise ValueError("""Alignment bias must have dimensions %d
+              (data_dim), but currently has %d."""%
+                               (data_dim, in_mat_cxf.shape[0]))
+            if in_mat_cxf is not None and align_bias_1xc is not None:
+              # (data - alignment_bias) * W_in
+              # data * W_in - alignment_bias * W_in
+              # So b = -alignment_bias * W_in to accommodate PCA style offset.
+              in_bias_1xf = -np.dot(align_bias_1xc, in_mat_cxf)
+          else:
+            raise ValueError("bias_c not found for dataset ", name)
+
+          if hps.do_train_readin:
+              # only add to IO transformations collection only if we want it to be
+              # learnable, because IO_transformations collection will be trained
+              # when do_train_io_only
+              collections_readin=['IO_transformations']
+          else:
+              collections_readin=None
+
+          in_fac_lin = init_linear(data_dim, used_in_factors_dim,
+                                   do_bias=True,
+                                   mat_init_value=in_mat_cxf,
+                                   bias_init_value=in_bias_1xf,
+                                   identity_if_possible=in_identity_if_poss,
+                                   normalized=False, name="x_2_infac_"+name,
+                                   collections=collections_readin,
+                                   trainable=hps.do_train_readin)
+          in_fac_W, in_fac_b = in_fac_lin
+          fns_in_fac_Ws[d] = makelambda(in_fac_W)
+          fns_in_fac_bs[d] = makelambda(in_fac_b)
+          preds[d] = tf.equal(tf.constant(name), self.dataName)
+
+          pf_pairs_in_fac_Ws = zip(preds, fns_in_fac_Ws)
+          pf_pairs_in_fac_bs = zip(preds, fns_in_fac_bs)
+
+
+          this_in_fac_W = tf.case(pf_pairs_in_fac_Ws, exclusive=False)
+          this_in_fac_b = tf.case(pf_pairs_in_fac_bs, exclusive=False)
+
+    full_subfactors_dim = None
     with tf.variable_scope("glm"):
-      out_identity_if_poss = False
-      if len(dataset_names) == 1 and \
-          factors_dim == hps.dataset_dims[dataset_names[0]]:
-        out_identity_if_poss = True
-      for d, name in enumerate(dataset_names):
-        data_dim = hps.dataset_dims[name]
-        in_mat_cxf = None
-        if datasets and 'alignment_matrix_cxf' in datasets[name].keys():
+      if hps.do_subpop_readout:
+        # check sizes of shared data
+        if shared_data is None or if 'readout_matrix_fxs' not in shared_data:
+          raise ValueError("No shared_data['readout_matrix_sxf'] provided for do_subpop_readout")
+
+        readout_matrix_fxs = shared_data['readout_matrix_fxs'].astype(np.float32)
+        full_subfactors_dim = readout_matrix_fxs.shape[1]
+        if readout_matrix_fxs.shape != (factors_dim, full_subfactors_dim):
+          raise ValueError("""readout_matrix_sxc must have \
+              dimensions %d x %d (factors_dim x subfactors_dim), but \
+              currently has %d x %d."""%
+                           (factors_dim, full_subfactors_dim,
+                            readout_matrix_fxs.shape[0],
+                            readout_matrix_fxs.shape[1]))
+
+        # check sizes of per dataset objects
+        for d, name in enumerate(dataset_names):
+          data_dim = hps.dataset_dims[name]
+
+          # load all the subpopulation info at once
+          if 'readout_matrix_sxc' not in dataset.keys():
+            raise ValueError("readout_matrix_sxc not found for dataset ",
+                             name)
+          readout_matrix_sxc =
+            dataset['readout_matrix_sxc'].astype(np.float32)
+          # determine the total number of subfactors from the first matrix
+          if full_subfactors_dim is None
+            full_subfactors_dim = readout_matrix_sxf.shape[0]
+          if readout_matrix_sxc.shape != (full_subfactors_dim, data_dim):
+            raise ValueError("""readout_matrix_sxf for dataset %s must have \
+                dimensions %d x %d (subfactors_dim x data_dim), but \
+                currently has %d x %d."""%
+                             (full_subfactors_dim, data_dim
+                              readout_matrix_sxf.shape[0],
+                              readout_matrix_sxf.shape[1]))
+
+          if 'readout_matrix_sxf_mask' not in dataset.keys():
+            raise ValueError("readout_matrix_sxf_mask not found for dataset ",
+                             name)
+          readout_matrix_sxf_mask =
+            dataset['readout_matrix_sxf_mask'].astype(np.bool)
+          if readout_matrix_sxf_mask.shape != (full_subfactors_dim, data_dim):):
+            raise ValueError("""readout_matrix_sxf_mask for dataset %s \
+                must have \
+                dimensions %d x %d (subfactors_dim x data_dim), but \
+                currenty has %d x %d."""%
+                             (full_subfactors_dim, data_dim,
+                              readin_matrix_cxs_mask.shape[0],
+                              readin_matrix_cxs_mask.shape[1]))
+
+          # check that all masked out values are actually zero
+          if np.any(readin_matrix_cxs[
+              np.logical_not(readin_matrix_cxs_mask)]):
+              raise ValueError("readin_matrix_cxs must be zero where \
+                readin_matrix_cxs_mask is False for dataset %s"%(name,))
+
+          if 'bias_c' not in dataset.keys():
+            raise ValueError("bias_c not found for dataset ",
+                             name)
+          bias_c =
+            dataset['bias_c'].astype(np.float32)
+          if bias_c.shape != (data_dim,):
+            raise ValueError("""bias_c for dataset %s must have \
+                dimensions %d (data_dim), but \
+                currently has %d x %d."""%
+                             (data_dim, bias_c.shape[0]))
+
+        # two stage readout
+        # first stage is shared
+        out_mat_fxs = readout_matrix_fxs
+        Wshared = two_stage_masked_linear(W1=readout_matrix_fxs,
+            W1name='shared_readout_fxs', normalized=True,
+            collections=['IO_transformations'],
+            trainable=True)
+
+        for d, name in enumerate(dataset_names):
+          data_dim = hps.dataset_dims[name]
           dataset = datasets[name]
-          in_mat_cxf = dataset['alignment_matrix_cxf'].astype(np.float32)
+          readout_matrix_sxc =
+            dataset['readout_matrix_sxc'].astype(np.float32)
+          readout_matrix_sxc_mask =
+            dataset['readin_matrix_cxs_mask'].astype(np.bool)
+          bias_c =
+            dataset['bias_c'].astype(np.float32)
 
-        if datasets and 'alignment_bias_c' in datasets[name].keys():
-          dataset = datasets[name]
-          align_bias_c = dataset['alignment_bias_c'].astype(np.float32)
-          align_bias_1xc = np.expand_dims(align_bias_c, axis=0)
+          # data * W1 * W2 + b
+          # initialize with transpose of readin matrices
+          out_mat_sxc = readout_matrix_sxc
+          out_mat_sxc_mask = readout_matrix_sxc_mask
+          out_bias_1xc = np.expand_dims(bias_c, axis=0)
 
-        out_mat_fxc = None
-        out_bias_1xc = None
-        if in_mat_cxf is not None:
-            out_mat_fxc = in_mat_cxf.T
-        if align_bias_1xc is not None:
-          out_bias_1xc = align_bias_1xc
+          if hps.output_dist != 'poisson':
+            raise ValueError("Two stage readout only supported for Poisson \
+              output distribution at present")
 
-        if hps.output_dist == 'poisson':
-          out_fac_lin = init_linear(factors_dim, data_dim, do_bias=True,
-                                    mat_init_value=out_mat_fxc,
-                                    bias_init_value=out_bias_1xc,
-                                    identity_if_possible=out_identity_if_poss,
-                                    normalized=False,
-                                    name="fac_2_logrates_"+name,
-                                    collections=['IO_transformations'])
-          out_fac_W, out_fac_b = out_fac_lin
+          W1, mask1, bias = two_stage_masked_linear(
+                        W1=out_mat_sxc,
+                        mask1=out_mat_sxc_mask,
+                        bias=out_bias_1xc,
+                        W1name="W_sxc", biasname="bias_1xc"
+                        normalized=True, collections=['IO_transformations'],
+                        trainable=True)
 
-        elif hps.output_dist == 'gaussian':
-          out_fac_lin_mean = \
-              init_linear(factors_dim, data_dim, do_bias=True,
-                          mat_init_value=out_mat_fxc,
-                          bias_init_value=out_bias_1xc,
-                          normalized=False,
-                          name="fac_2_means_"+name,
-                          collections=['IO_transformations'])
-          out_fac_W_mean, out_fac_b_mean = out_fac_lin_mean
+          out_fac_W = tf.multiply(W2, tf.cast(mask2, dtype=W2.dtype),
+              name="W_sxc_masked")
+          out_fac_b = out_bias_1xc
 
-          mat_init_value = np.zeros([factors_dim, data_dim]).astype(np.float32)
-          bias_init_value = np.ones([1, data_dim]).astype(np.float32)
-          out_fac_lin_logvar = \
-              init_linear(factors_dim, data_dim, do_bias=True,
-                          mat_init_value=mat_init_value,
-                          bias_init_value=bias_init_value,
-                          normalized=False,
-                          name="fac_2_logvars_"+name,
-                          collections=['IO_transformations'])
-          out_fac_W_mean, out_fac_b_mean = out_fac_lin_mean
-          out_fac_W_logvar, out_fac_b_logvar = out_fac_lin_logvar
-          out_fac_W = tf.concat(
-              axis=1, values=[out_fac_W_mean, out_fac_W_logvar])
-          out_fac_b = tf.concat(
-              axis=1, values=[out_fac_b_mean, out_fac_b_logvar])
-        else:
-          assert False, "NIY"
+          preds[d] = tf.equal(tf.constant(name), self.dataName)
+          fns_out_fac_Ws[d] = makelambda(out_fac_W)
+          fns_out_fac_bs[d] =  makelambda(out_fac_b)
 
-        preds[d] = tf.equal(tf.constant(name), self.dataName)
-        data_dim = hps.dataset_dims[name]
-        fns_out_fac_Ws[d] = makelambda(out_fac_W)
-        fns_out_fac_bs[d] =  makelambda(out_fac_b)
+        # use case to select readout pair for dataset
+        pf_pairs_out_fac_Ws = zip(preds, fns_out_fac_Ws)
+        pf_pairs_out_fac_bs = zip(preds, fns_out_fac_bs)
 
-    pf_pairs_in_fac_Ws = zip(preds, fns_in_fac_Ws)
-    pf_pairs_in_fac_bs = zip(preds, fns_in_fac_bs)
-    pf_pairs_out_fac_Ws = zip(preds, fns_out_fac_Ws)
-    pf_pairs_out_fac_bs = zip(preds, fns_out_fac_bs)
+        # and multiply in shared fxs matrix with session specific sxc
+        this_out_fac_W_session = tf.case(pf_pairs_out_fac_Ws, exclusive=True)
+        this_out_fac_W = matmul(Wshared, this_out_fac_W_session, name="shared_fxs_times_session_sxc")
+        this_out_fac_b = tf.case(pf_pairs_out_fac_bs, exclusive=False)
 
-    this_in_fac_W = tf.case(pf_pairs_in_fac_Ws, exclusive=True)
-    this_in_fac_b = tf.case(pf_pairs_in_fac_bs, exclusive=True)
-    this_out_fac_W = tf.case(pf_pairs_out_fac_Ws, exclusive=True)
-    this_out_fac_b = tf.case(pf_pairs_out_fac_bs, exclusive=True)
+      else:
+        # original one stage readout
+        out_identity_if_poss = False
+        if len(dataset_names) == 1 and \
+            factors_dim == hps.dataset_dims[dataset_names[0]]:
+          out_identity_if_poss = True
+        for d, name in enumerate(dataset_names):
+          data_dim = hps.dataset_dims[name]
+          in_mat_cxf = None
+          if datasets and 'alignment_matrix_cxf' in datasets[name].keys():
+            dataset = datasets[name]
+            in_mat_cxf = dataset['alignment_matrix_cxf'].astype(np.float32)
+
+          if datasets and 'bias_c' in datasets[name].keys():
+            dataset = datasets[name]
+            align_bias_c = dataset['bias_c'].astype(np.float32)
+            align_bias_1xc = np.expand_dims(align_bias_c, axis=0)
+
+          out_mat_fxc = None
+          out_bias_1xc = None
+          if in_mat_cxf is not None:
+              out_mat_fxc = in_mat_cxf.T
+          if align_bias_1xc is not None:
+            out_bias_1xc = align_bias_1xc
+
+          if hps.output_dist == 'poisson':
+            out_fac_lin = init_linear(factors_dim, data_dim, do_bias=True,
+                                      mat_init_value=out_mat_fxc,
+                                      bias_init_value=out_bias_1xc,
+                                      identity_if_possible=out_identity_if_poss,
+                                      normalized=False,
+                                      name="fac_2_logrates_"+name,
+                                      collections=['IO_transformations'])
+            out_fac_W, out_fac_b = out_fac_lin
+
+          elif hps.output_dist == 'gaussian':
+            out_fac_lin_mean = \
+                init_linear(factors_dim, data_dim, do_bias=True,
+                            mat_init_value=out_mat_fxc,
+                            bias_init_value=out_bias_1xc,
+                            normalized=False,
+                            name="fac_2_means_"+name,
+                            collections=['IO_transformations'])
+            out_fac_W_mean, out_fac_b_mean = out_fac_lin_mean
+
+            mat_init_value = np.zeros([factors_dim, data_dim]).astype(np.float32)
+            bias_init_value = np.ones([1, data_dim]).astype(np.float32)
+            out_fac_lin_logvar = \
+                init_linear(factors_dim, data_dim, do_bias=True,
+                            mat_init_value=mat_init_value,
+                            bias_init_value=bias_init_value,
+                            normalized=False,
+                            name="fac_2_logvars_"+name,
+                            collections=['IO_transformations'])
+            out_fac_W_mean, out_fac_b_mean = out_fac_lin_mean
+            out_fac_W_logvar, out_fac_b_logvar = out_fac_lin_logvar
+            out_fac_W = tf.concat(
+                axis=1, values=[out_fac_W_mean, out_fac_W_logvar])
+            out_fac_b = tf.concat(
+                axis=1, values=[out_fac_b_mean, out_fac_b_logvar])
+          else:
+            assert False, "NIY"
+
+          preds[d] = tf.equal(tf.constant(name), self.dataName)
+          data_dim = hps.dataset_dims[name]
+          fns_out_fac_Ws[d] = makelambda(out_fac_W)
+          fns_out_fac_bs[d] =  makelambda(out_fac_b)
+
+        # use case to select readout pair for dataset
+        pf_pairs_out_fac_Ws = zip(preds, fns_out_fac_Ws)
+        pf_pairs_out_fac_bs = zip(preds, fns_out_fac_bs)
+
+        this_out_fac_W = tf.case(pf_pairs_out_fac_Ws, exclusive=True)
+        this_out_fac_b = tf.case(pf_pairs_out_fac_bs, exclusive=True)
 
     # External inputs (not changing by dataset, by definition).
     if hps.ext_input_dim > 0:
@@ -796,18 +1058,18 @@ class LFADS(object):
                             normalized=True, name="gen_2_fac")
       with tf.variable_scope("glm", reuse=True if t > 0 else None):
         if hps.output_dist == 'poisson':
-          log_rates_t = tf.add(tf.matmul(factors[t], this_out_fac_W, 
+          log_rates_t = tf.add(tf.matmul(factors[t], this_out_fac_W,
                                name='factors_times_readoutW'),
                                this_out_fac_b, name="log_rates_from_factors")
           log_rates_t.set_shape([None, None])
           if hps.clip_log_rates_max is not None:
-            log_rates_clip = tf.minimum(log_rates_t, hps.clip_log_rates_max, 
+            log_rates_clip = tf.minimum(log_rates_t, hps.clip_log_rates_max,
                     name="clip_log_rates_from_factors")
           else:
             log_rates_clip = log_rates_t
           rates[t] = dist_params[t] = tf.exp(log_rates_clip) # rates feed back
           rates[t].set_shape([None, hps.dataset_dims[hps.dataset_names[0]]])
-          loglikelihood_t = tf.subtract(Poisson(log_rates_clip).logp(data_t_bxd), 
+          loglikelihood_t = tf.subtract(Poisson(log_rates_clip).logp(data_t_bxd),
                 tf.nn.relu(log_rates_t - hps.clip_log_rates_max, name="clip_relu"),
                                 name="log_likelihood_rates")
 
@@ -1982,7 +2244,7 @@ class LFADS(object):
     model_runs['train_steps'] = train_steps
     return model_runs
 
-  def write_model_runs(self, datasets, output_fname=None, push_mean=False):
+  def write_model_runs(self, datasets, shared_data=None, output_fname=None, push_mean=False):
     """Run the model on the data in data_dict, and save the computed values.
 
     LFADS generates a number of outputs for each examples, and these are all
