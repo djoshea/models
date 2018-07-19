@@ -137,7 +137,7 @@ def init_linear(in_size, out_size, do_bias=True, mat_init_value=None,
     else:
       w = tf.get_variable(wname, [in_size, out_size], initializer=mat_init,
                           collections=w_collections, trainable=trainable)
-    w = tf.nn.l2_normalize(w, dim=0) # x W, so xW_j = \sum_i x_bi W_ij
+    w = tf.nn.l2_normalize(w, axis=0) # x W, so xW_j = \sum_i x_bi W_ij
   else:
     w_collections = [tf.GraphKeys.GLOBAL_VARIABLES]
     if collections:
@@ -167,10 +167,10 @@ def init_linear(in_size, out_size, do_bias=True, mat_init_value=None,
   return (w, b)
 
 
-def two_stage_masked_linear(W1, mask1, W2=None, mask2=None, bias=None,
-                W1name="W1", W2name="W2", biasname="b",
-                normalized=False, collections=None,
-                trainable=True):
+def two_stage_masked_linear(W1, mask1=None, W2=None, mask2=None, bias=None,
+                            W1name="W1", W2name="W2", biasname="b",
+                            normalized=False, collections=None,
+                            trainable=True):
   """Two-stage (affine) factorized transformation with masked weights
 
   Implements y = (x * W1*mask1) * W2*mask2 + b
@@ -184,57 +184,69 @@ def two_stage_masked_linear(W1, mask1, W2=None, mask2=None, bias=None,
       tf.GraphKeys.GLOBAL_VARIABLES already, so no need for that.)
 
   Returns:
-    Returns nodes (W1, mask1, W2, mask2, bias)
+    Returns nodes (W1masked, W2masked, bias)
   """
 
+  W1dtype = W1.dtype
   if normalized:
     w_collections = [tf.GraphKeys.GLOBAL_VARIABLES, "norm-variables"]
     if collections:
       w_collections += collections
     W1 = tf.Variable(W1, name=W1name, collections=w_collections,
-                    trainable=trainable)
-    W1 = tf.nn.l2_normalize(W1, dim=0) # x W, so xW_j = \sum_i x_bi W_ij
+                     trainable=trainable)
+    W1 = tf.nn.l2_normalize(W1, axis=0) # x W, so xW_j = \sum_i x_bi W_ij
   else:
     w_collections = [tf.GraphKeys.GLOBAL_VARIABLES]
     if collections:
       w_collections += collections
     W1 = tf.Variable(W1, name=W1name, collections=w_collections,
-                    trainable=trainable)
+                     trainable=trainable)
 
   if mask1 is not None:
     mask1name = W1name + "_mask"
-    mask1 = tf.Variable(mask1, name=mask1name, collections=collections,
-                        trainable=False)
+    mask1 = mask1.astype(W1dtype)
+    mask1 = tf.convert_to_tensor(mask1, dtype=W1dtype, name=mask1name)
+    # mask1 = tf.Variable(mask1, name=mask1name, collections=collections,
+    #                     trainable=False)
+
+    W1name_masked = W1name + "_masked"
+    W1 = tf.multiply(W1, mask1, name=W1name_masked)
 
   if W2 is not None:
+    W2dtype = W2.dtype
     if normalized:
       w_collections = [tf.GraphKeys.GLOBAL_VARIABLES, "norm-variables"]
       if collections:
         w_collections += collections
       W2 = tf.Variable(W2, name=W1name, collections=w_collections,
-                      trainable=trainable)
-      W2 = tf.nn.l2_normalize(W2, dim=0) # x W, so xW_j = \sum_i x_bi W_ij
+                       trainable=trainable)
+      W2 = tf.nn.l2_normalize(W2, axis=0) # x W, so xW_j = \sum_i x_bi W_ij
     else:
       w_collections = [tf.GraphKeys.GLOBAL_VARIABLES]
       if collections:
         w_collections += collections
       W2 = tf.Variable(W2, name=W1name, collections=w_collections,
-                      trainable=trainable)
+                       trainable=trainable)
 
     if mask2 is not None:
       mask2name = W2name + "_mask"
-      mask2 = tf.Variable(mask2, name=mask2name, collections=collections,
-                          trainable=False)
+      mask2 = mask2.astype(W2dtype)
+      # mask2 = tf.Variable(mask2, name=mask2name, collections=collections,
+      #                     trainable=False)
+      mask2 = tf.convert_to_tensor(mask2, dtype=W2dtype, name=mask2name)
+
+      W2name_masked = W2name + "_masked"
+      W2 = tf.multiply(W2, mask2, name=W2name_masked)
 
   if bias is not None:
     b_collections = [tf.GraphKeys.GLOBAL_VARIABLES]
     if collections:
       b_collections += collections
     bias = tf.Variable(bias, name=biasname,
-                    collections=b_collections,
-                    trainable=trainable)
+                       collections=b_collections,
+                       trainable=trainable)
 
-  return W1, mask1, W2, mask2, bias
+  return W1, W2, bias
 
 
 def write_data(data_fname, data_dict, use_json=False, compression=None):
@@ -333,9 +345,6 @@ def read_datasets(data_path, data_fname_stem, reduce_timesteps_to=None):
 
   dataset_dict = {}
   fnames = os.listdir(data_path)
-
-  # @djoshea REMOVE
-  fnames = fnames[0:7]
 
   print ('loading data from ' + data_path + ' with stem ' + data_fname_stem)
   for fname in fnames:

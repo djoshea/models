@@ -109,6 +109,7 @@ TF_DEBUG_TENSORBOARD_HOSTPORT = 'localhost:6064'
 TF_DEBUG_DUMP_ROOT = ''
 DEBUG_VERBOSE = False
 DEBUG_REDUCE_TIMESTEPS_TO = None
+DEBUG_PRINT_EACH_STEP = False
 
 flags = tf.app.flags
 flags.DEFINE_string("kind", "train",
@@ -433,6 +434,7 @@ flags.DEFINE_string("tf_debug_tensorboard_hostport", TF_DEBUG_TENSORBOARD_HOSTPO
 flags.DEFINE_string("tf_debug_dump_root", TF_DEBUG_DUMP_ROOT, "Location to dump TF debugging information")
 flags.DEFINE_boolean("debug_verbose", DEBUG_VERBOSE, "Whether to print verbose debugging information")
 flags.DEFINE_integer("debug_reduce_timesteps_to", DEBUG_REDUCE_TIMESTEPS_TO, "For debugging, artificially keep only this many timesteps to reduce graph size")
+flags.DEFINE_boolean("debug_print_each_step", DEBUG_PRINT_EACH_STEP, "Whether to print a message after each step (in addition to each epoch)")
 
 FLAGS = flags.FLAGS
 
@@ -501,6 +503,9 @@ def build_model(hps, kind="train", datasets=None, shared_data=None):
   hp_fname = os.path.join(hps.lfads_save_dir, fname)
   hps_for_saving = jsonify_dict(hps)
   utils.write_data(hp_fname, hps_for_saving, use_json=True)
+
+  print("Finished creating TF graph")
+  sys.stdout.flush()
 
   return model
 
@@ -619,6 +624,7 @@ def build_hyperparameter_dict(flags):
   # Debugging
   d['debug_verbose'] = flags.debug_verbose
   d['debug_reduce_timesteps_to'] = flags.debug_reduce_timesteps_to
+  d['debug_print_each_step'] = flags.debug_print_each_step
 
   return d
 
@@ -791,16 +797,19 @@ def load_datasets(data_dir, data_filename_stem, reduce_timesteps_to=None):
     datasets[k] = clean_data_dict(data_dict)
 
     train_total_size = len(data_dict['train_data'])
-    if train_total_size == 0:
-      print("Did not load training set.")
-    else:
-      print("Found training set with number examples: ", train_total_size)
+    # if train_total_size == 0:
+    #   print("Did not load training set.")
+    # else:
+    #   print("Found training set with number examples: ", train_total_size)
 
     valid_total_size = len(data_dict['valid_data'])
-    if valid_total_size == 0:
-      print("Did not load validation set.")
-    else:
-      print("Found validation set with number examples: ", valid_total_size)
+    # if valid_total_size == 0:
+    #   print("Did not load validation set.")
+    # else:
+    #   print("Found validation set with number examples: ", valid_total_size)
+
+    print("Dataset %s: %d training, %d validation trials" %
+          (k, train_total_size, valid_total_size))
 
   return datasets
 
@@ -865,8 +874,6 @@ def main(_):
     datasets = load_datasets(hps.data_dir, hps.data_filename_stem, hps.debug_reduce_timesteps_to)
     shared_data = read_shared_data(hps.data_dir)
 
-    # REMOVE THIS
-    shared_data['readout_matrix_fxs'] = shared_data['readoutMatrix_fxs']
   else:
     raise ValueError('Kind {} is not supported.'.format(kind))
 
