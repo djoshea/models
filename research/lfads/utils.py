@@ -167,8 +167,8 @@ def init_linear(in_size, out_size, do_bias=True, mat_init_value=None,
   return (w, b)
 
 
-def two_stage_masked_linear(W1, mask1, W2, mask2, bias,
-                W1name="W1", W2name="W2", biasname="b"
+def two_stage_masked_linear(W1, mask1, W2=None, mask2=None, bias=None,
+                W1name="W1", W2name="W2", biasname="b",
                 normalized=False, collections=None,
                 trainable=True):
   """Two-stage (affine) factorized transformation with masked weights
@@ -201,12 +201,12 @@ def two_stage_masked_linear(W1, mask1, W2, mask2, bias,
     W1 = tf.Variable(W1, name=W1name, collections=w_collections,
                     trainable=trainable)
 
-  if mask1:
+  if mask1 is not None:
     mask1name = W1name + "_mask"
     mask1 = tf.Variable(mask1, name=mask1name, collections=collections,
                         trainable=False)
 
-  if W2:
+  if W2 is not None:
     if normalized:
       w_collections = [tf.GraphKeys.GLOBAL_VARIABLES, "norm-variables"]
       if collections:
@@ -221,19 +221,20 @@ def two_stage_masked_linear(W1, mask1, W2, mask2, bias,
       W2 = tf.Variable(W2, name=W1name, collections=w_collections,
                       trainable=trainable)
 
-    if mask2:
+    if mask2 is not None:
       mask2name = W2name + "_mask"
       mask2 = tf.Variable(mask2, name=mask2name, collections=collections,
                           trainable=False)
 
-  b_collections = [tf.GraphKeys.GLOBAL_VARIABLES]
-  if collections:
-    b_collections += collections
-  bias = tf.Variable(bias, name=biasname,
-                  collections=b_collections,
-                  trainable=trainable)
+  if bias is not None:
+    b_collections = [tf.GraphKeys.GLOBAL_VARIABLES]
+    if collections:
+      b_collections += collections
+    bias = tf.Variable(bias, name=biasname,
+                    collections=b_collections,
+                    trainable=trainable)
 
-  return (W1, mask1, W2, mask2, bias)
+  return W1, mask1, W2, mask2, bias
 
 
 def write_data(data_fname, data_dict, use_json=False, compression=None):
@@ -332,6 +333,9 @@ def read_datasets(data_path, data_fname_stem, reduce_timesteps_to=None):
 
   dataset_dict = {}
   fnames = os.listdir(data_path)
+
+  # @djoshea REMOVE
+  fnames = fnames[0:7]
 
   print ('loading data from ' + data_path + ' with stem ' + data_fname_stem)
   for fname in fnames:

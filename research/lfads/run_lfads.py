@@ -420,11 +420,11 @@ flags.DEFINE_integer("l2_start_step", L2_START_STEP,
 flags.DEFINE_integer("l2_increase_steps", L2_INCREASE_STEPS,
                      "Increase weight of l2 cost to avoid local minimum.")
 
- # two_stage_readout : subpopulation specific readout and readout matrices
- flags.DEFINE_boolean("do_subpop_readin", DO_SUBPOP_READIN,
-                      "Factor the readin matrices using subpopulations")
- flags.DEFINE_boolean("do_subpop_readout", DO_SUBPOP_READOUT,
-                      "Factor the readout matrices using subpopulations")
+# two_stage_readout : subpopulation specific readout and readout matrices
+flags.DEFINE_boolean("do_subpop_readin", DO_SUBPOP_READIN,
+                    "Factor the readin matrices using subpopulations")
+flags.DEFINE_boolean("do_subpop_readout", DO_SUBPOP_READOUT,
+                    "Factor the readout matrices using subpopulations")
 
 # DEBUGGING
 flags.DEFINE_boolean("tf_debug_cli", TF_DEBUG_CLI, "Whether to wrap tf.session in CLI tfdbg?")
@@ -758,7 +758,7 @@ def clean_data_dict(data_dict):
   return data_dict
 
 
-def load_datasets(data_dir, data_filename_stem, hps):
+def load_datasets(data_dir, data_filename_stem, reduce_timesteps_to=None):
   """Load the datasets from a specified directory.
 
   Example files look like
@@ -785,7 +785,7 @@ def load_datasets(data_dir, data_filename_stem, hps):
     each dataset file.
   """
   print("Reading data from ", data_dir)
-  datasets = utils.read_datasets(data_dir, data_filename_stem, hps.reduce_timesteps_to)
+  datasets = utils.read_datasets(data_dir, data_filename_stem, reduce_timesteps_to)
 
   for k, data_dict in datasets.items():
     datasets[k] = clean_data_dict(data_dict)
@@ -816,7 +816,7 @@ def read_shared_data(data_path):
 
   filename = os.path.join(data_path, 'shared_data.h5')
   if os.path.exists(filename):
-    return read_data(filename)
+    return utils.read_data(filename)
   else:
     return {}
 
@@ -864,6 +864,9 @@ def main(_):
               "prior_sample", "write_model_params"]:
     datasets = load_datasets(hps.data_dir, hps.data_filename_stem, hps.debug_reduce_timesteps_to)
     shared_data = read_shared_data(hps.data_dir)
+
+    # REMOVE THIS
+    shared_data['readout_matrix_fxs'] = shared_data['readoutMatrix_fxs']
   else:
     raise ValueError('Kind {} is not supported.'.format(kind))
 
