@@ -23,6 +23,10 @@ import numpy as np
 import tensorflow as tf
 
 
+def clip_exp(x, max_value=15):
+  return tf.exp(tf.minimum(x, max_value))
+
+
 def log_sum_exp(x_k):
   """Computes log \sum exp in a numerically stable way.
     log ( sum_i exp(x_i) )
@@ -38,7 +42,8 @@ def log_sum_exp(x_k):
   """
   m = tf.reduce_max(x_k)
   x1_k = x_k - m
-  u_k = tf.exp(x1_k)
+  # u_k = tf.exp(x1_k)
+  u_k = clip_exp(x1_k)
   z = tf.reduce_sum(u_k)
   return tf.log(z) + m
 

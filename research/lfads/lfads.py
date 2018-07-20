@@ -72,7 +72,7 @@ from distributions import LearnableAutoRegressive1Prior
 from distributions import KLCost_GaussianGaussianProcessSampled
 
 from utils import init_linear, linear, list_t_bxn_to_tensor_bxtxn, write_data
-from utils import log_sum_exp, flatten
+from utils import clip_exp, log_sum_exp, flatten
 from utils import two_stage_masked_linear
 from plot_lfads import plot_lfads
 
@@ -945,8 +945,16 @@ class LFADS(object):
       if hps.output_dist == 'poisson':
         log_rates_t0 = tf.matmul(factors[-1], this_out_fac_W) + this_out_fac_b
         log_rates_t0.set_shape([None, None])
-        rates[-1] = tf.exp(log_rates_t0) # rate
+
+        if hps.clip_log_rates_max is not None:
+          log_rates_t0_clip = tf.minimum(log_rates_t0, hps.clip_log_rates_max,
+                                      name="clip_log_rates_t0")
+        else:
+          log_rates_t0_clip = log_rates_t0
+
+        rates[-1] = tf.exp(log_rates_t0_clip) # rate
         rates[-1].set_shape([None, hps.dataset_dims[hps.dataset_names[0]]])
+
       elif hps.output_dist == 'gaussian':
         mean_n_logvars = tf.matmul(factors[-1],this_out_fac_W) + this_out_fac_b
         mean_n_logvars.set_shape([None, None])
@@ -1118,6 +1126,7 @@ class LFADS(object):
 
       # IWAE error averages inside the log
       k = tf.cast(tf.shape(log_p_xgz_b)[0], tf.float32)
+
       iwae_lb_on_ll = -tf.log(k) + log_sum_exp(lb_on_ll_b)
       self.nll_bound_iwae = -iwae_lb_on_ll
 
@@ -1236,10 +1245,10 @@ class LFADS(object):
       for c in range(hps.co_dim):
         self.atau_summ[c] = \
             tf.summary.scalar("AR Autocorrelation taus " + str(c),
-                              tf.exp(self.prior_zs_ar_con.logataus_1xu[0,c]))
+                              clip_exp(self.prior_zs_ar_con.logataus_1xu[0,c]))
         self.pvar_summ[c] = \
             tf.summary.scalar("AR Variances " + str(c),
-                              tf.exp(self.prior_zs_ar_con.logpvars_1xu[0,c]))
+                              clip_exp(self.prior_zs_ar_con.logpvars_1xu[0,c]))
 
     # cost summaries, separated into different collections for
     # training vs validation.  We make placeholders for these, because
