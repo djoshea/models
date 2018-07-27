@@ -342,7 +342,8 @@ class LFADS(object):
     factors_dim = hps.factors_dim
     self.preds = preds = [None] * ndatasets
     self.fns_in_fac_Ws = fns_in_fac_Ws = [None] * ndatasets
-    self.fns_in_fatcor_bs = fns_in_fac_bs = [None] * ndatasets
+    self.fns_in_factor_bs = fns_in_fac_bs = [None] * ndatasets
+
     self.fns_out_fac_Ws = fns_out_fac_Ws = [None] * ndatasets
     self.fns_out_fac_bs = fns_out_fac_bs = [None] * ndatasets
     self.datasetNames = dataset_names = hps.dataset_names
@@ -400,7 +401,7 @@ class LFADS(object):
                             readin_matrix_cxs_mask.shape[0],
                             readin_matrix_cxs_mask.shape[1]))
 
-        # check that all masked out values are actually zero
+        # check that all masked out values are   actually zero
         if np.any(readin_matrix_cxs[
             np.logical_not(readin_matrix_cxs_mask)]):
             raise ValueError("readin_matrix_cxs must be zero where \
@@ -466,7 +467,8 @@ class LFADS(object):
                         W1name="W_cxs_ds%d"%(d,),
                         W2name="W_sxf_ds%d"%(d,),
                         biasname="bias_1xf_ds%d"%(d,),
-                        normalized=False, collections=collections_readin,
+                        normalized=False,
+                        collections=collections_readin,
                         trainable=hps.do_train_readin)
 
           in_fac_W = tf.matmul(W1m, W2m,
@@ -480,7 +482,8 @@ class LFADS(object):
         pf_pairs_in_fac_Ws = zip(preds, fns_in_fac_Ws)
         pf_pairs_in_fac_bs = zip(preds, fns_in_fac_bs)
 
-        this_in_fac_W = tf.case(pf_pairs_in_fac_Ws, exclusive=True)
+        # add the case'd readin matrix to l2_readin_reg collection so it is regularized below
+        this_in_fac_W = tf.case(pf_pairs_in_fac_Ws, exclusive=True, collections='l2_readin_reg')
         this_in_fac_b = tf.case(pf_pairs_in_fac_bs, exclusive=True)
 
     else: # not do_subpop_readin
@@ -622,9 +625,10 @@ class LFADS(object):
 
         # two stage readout
         # first stage is shared
+        # add to l2_readout_reg so it is regularized below
         Wshared, _, _ = two_stage_masked_linear(W1=readout_matrix_fxs,
             W1name='shared_readout_fxs', normalized=True,
-            collections=['IO_transformations'],
+            collections=['IO_transformations', 'l2_readout_reg'],
             trainable=True)
 
         for d, name in enumerate(dataset_names):
@@ -664,7 +668,8 @@ class LFADS(object):
         pf_pairs_out_fac_bs = zip(preds, fns_out_fac_bs)
 
         # and multiply in shared fxs matrix with session specific sxc
-        this_out_fac_W_session = tf.case(pf_pairs_out_fac_Ws, exclusive=True)
+        # add the case'd matrix to l2_readout_reg so it is regularized below
+        this_out_fac_W_session = tf.case(pf_pairs_out_fac_Ws, exclusive=True, collections='l2_readout_reg')
         this_out_fac_W = tf.matmul(Wshared, this_out_fac_W_session,
                                    name="shared_fxs_times_session_sxc")
         this_out_fac_b = tf.case(pf_pairs_out_fac_bs, exclusive=False)
@@ -1136,7 +1141,9 @@ class LFADS(object):
       l2_costs = []
       l2_numels = []
       l2_reg_var_lists = [tf.get_collection('l2_gen_reg'),
-                          tf.get_collection('l2_con_reg')]
+                          tf.get_collection('l2_con_reg'),
+                          tf.get_collection('l2_readin_reg'),
+                          tf.get_collection('l2_readout_reg')]
       l2_reg_scales = [self.hps.l2_gen_scale, self.hps.l2_con_scale]
       for l2_reg_vars, l2_scale in zip(l2_reg_var_lists, l2_reg_scales):
         for v in l2_reg_vars:
