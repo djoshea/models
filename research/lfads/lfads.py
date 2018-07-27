@@ -341,7 +341,7 @@ class LFADS(object):
     ndatasets = hps.ndatasets
     factors_dim = hps.factors_dim
     self.preds = preds = [None] * ndatasets
-    self.fns_in_fac_Ws = fns_in_fac_Ws = [None] * ndatasets
+    self.fns_in_fac_Ws = fns_in_fac_Ws = fns_in_fac_W1s = fns_in_fac_W2s = [None] * ndatasets
     self.fns_in_factor_bs = fns_in_fac_bs = [None] * ndatasets
 
     self.fns_out_fac_Ws = fns_out_fac_Ws = [None] * ndatasets
@@ -471,6 +471,9 @@ class LFADS(object):
                         collections=collections_readin,
                         trainable=hps.do_train_readin)
 
+          fns_in_fac_W1s[d] = makelambda(W1m)
+          fns_in_fac_W2s[d] = makelambda(W2m)
+
           in_fac_W = tf.matmul(W1m, W2m,
                                name="W_cxs_masked_times_W_sxf_ds%d"%(d,))
           in_fac_b = bias
@@ -479,12 +482,18 @@ class LFADS(object):
           fns_in_fac_bs[d] = makelambda(in_fac_b)
           preds[d] = tf.equal(tf.constant(name), self.dataName)
 
+        pf_pairs_in_fac_W1s = zip(preds, fns_in_fac_W1s)
+        pf_pairs_in_fac_W2s = zip(preds, fns_in_fac_W2s)
         pf_pairs_in_fac_Ws = zip(preds, fns_in_fac_Ws)
         pf_pairs_in_fac_bs = zip(preds, fns_in_fac_bs)
 
         # add the case'd readin matrix to l2_readin_reg collection so it is regularized below
-        this_in_fac_W = tf.case(pf_pairs_in_fac_Ws, exclusive=True, collections='l2_readin_reg')
+        this_in_fac_W = tf.case(pf_pairs_in_fac_Ws, exclusive=True)
         this_in_fac_b = tf.case(pf_pairs_in_fac_bs, exclusive=True)
+
+        # for regularization only
+        this_in_fac_W1 = tf.case(pf_pairs_in_fac_W1s, exclusive=True, collections='l2_readin_reg')
+        this_in_fac_W2 = tf.case(pf_pairs_in_fac_W2s, exclusive=True, collections='l2_readin_reg')
 
     else: # not do_subpop_readin
       # original one stage readin matrices from neurons --> in factors
