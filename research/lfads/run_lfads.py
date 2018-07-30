@@ -87,6 +87,10 @@ KL_INCREASE_STEPS = 2000
 L2_INCREASE_STEPS = 2000
 L2_GEN_SCALE = 2000.0
 L2_CON_SCALE = 0.0
+
+L2_READIN_SCALE = L2_GEN_SCALE
+L2_READOUT_SCALE = L2_GEN_SCALE
+
 # scale of regularizer on time correlation of inferred inputs
 CO_MEAN_CORR_SCALE = 0.0
 KL_IC_WEIGHT = 1.0
@@ -385,6 +389,10 @@ flags.DEFINE_float("l2_con_scale", L2_CON_SCALE,
 flags.DEFINE_float("co_mean_corr_scale", CO_MEAN_CORR_SCALE,
                    "Cost of correlation (thru time)in the means of \
                    controller output.")
+flags.DEFINE_float("l2_readin_scale", L2_READIN_SCALE,
+                   "L2 regularization cost for the subpop readin matrices")
+flags.DEFINE_float("l2_readout_scale", L2_READOUT_SCALE,
+                   "L2 regularization cost for the subpop readout matrices")
 
 # UNDERFITTING
 # If the primary task of LFADS is "filtering" of data and not
@@ -609,6 +617,8 @@ def build_hyperparameter_dict(flags):
   d['temporal_spike_jitter_width'] = flags.temporal_spike_jitter_width
   d['l2_gen_scale'] = flags.l2_gen_scale
   d['l2_con_scale'] = flags.l2_con_scale
+  d['l2_readin_scale'] = flags.l2_readin_scale
+  d['l2_readout_scale'] = flags.l2_readout_scale
   # Underfitting
   d['kl_ic_weight'] = flags.kl_ic_weight
   d['kl_co_weight'] = flags.kl_co_weight
@@ -810,6 +820,7 @@ def load_datasets(data_dir, data_filename_stem, reduce_timesteps_to=None):
 
     print("Dataset %s: %d training, %d validation trials" %
           (k, train_total_size, valid_total_size))
+    sys.stdout.flush()
 
   return datasets
 

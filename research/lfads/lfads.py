@@ -348,6 +348,7 @@ class LFADS(object):
     self.fns_out_fac_bs = fns_out_fac_bs = [None] * ndatasets
     self.datasetNames = dataset_names = hps.dataset_names
     self.ext_inputs = ext_inputs = None
+    self.l2_readin_reg = self.l2_readout_reg = []
 
     if len(dataset_names) == 1:  # single session
       if 'alignment_matrix_cxf' in datasets[dataset_names[0]].keys():
@@ -492,8 +493,10 @@ class LFADS(object):
         this_in_fac_b = tf.case(pf_pairs_in_fac_bs, exclusive=True)
 
         # for regularization only
-        this_in_fac_W1 = tf.case(pf_pairs_in_fac_W1s, exclusive=True, collections='l2_readin_reg')
-        this_in_fac_W2 = tf.case(pf_pairs_in_fac_W2s, exclusive=True, collections='l2_readin_reg')
+        this_in_fac_W1 = tf.case(pf_pairs_in_fac_W1s, exclusive=True)
+        this_in_fac_W2 = tf.case(pf_pairs_in_fac_W2s, exclusive=True)
+
+        self.l2_readin_reg = [this_in_fac_W1, this_in_fac_W2]
 
     else: # not do_subpop_readin
       # original one stage readin matrices from neurons --> in factors
@@ -567,7 +570,6 @@ class LFADS(object):
           pf_pairs_in_fac_Ws = zip(preds, fns_in_fac_Ws)
           pf_pairs_in_fac_bs = zip(preds, fns_in_fac_bs)
 
-
           this_in_fac_W = tf.case(pf_pairs_in_fac_Ws, exclusive=False)
           this_in_fac_b = tf.case(pf_pairs_in_fac_bs, exclusive=False)
 
@@ -629,7 +631,7 @@ class LFADS(object):
           if bias_c.shape != (data_dim,):
             raise ValueError("""bias_c for dataset %s must have \
                 dimensions %d (data_dim), but \
-                currently has %d x %d."""%
+                currently has %d."""%
                 (name, data_dim, bias_c.shape[0]))
 
         # two stage readout
@@ -637,7 +639,7 @@ class LFADS(object):
         # add to l2_readout_reg so it is regularized below
         Wshared, _, _ = two_stage_masked_linear(W1=readout_matrix_fxs,
             W1name='shared_readout_fxs', normalized=True,
-            collections=['IO_transformations', 'l2_readout_reg'],
+            collections=['IO_transformations',],
             trainable=True)
 
         for d, name in enumerate(dataset_names):
@@ -682,6 +684,8 @@ class LFADS(object):
         this_out_fac_W = tf.matmul(Wshared, this_out_fac_W_session,
                                    name="shared_fxs_times_session_sxc")
         this_out_fac_b = tf.case(pf_pairs_out_fac_bs, exclusive=False)
+
+        self.l2_readout_reg = [Wshared, this_out_fac_W_session]
 
       else:
         # original one stage readout
@@ -781,6 +785,8 @@ class LFADS(object):
       ext_input_do_bxtxi = None
 
     # ENCODERS
+    # fix this ext_input_do_bxtxi and dataset_bxtxd both come in as parameters
+    # or both are accessed from outer scope
     def encode_data(dataset_bxtxd, enc_cell, name, forward_or_reverse,
                 num_steps_to_encode):
       """Encode data for LFADS
@@ -1151,9 +1157,10 @@ class LFADS(object):
       l2_numels = []
       l2_reg_var_lists = [tf.get_collection('l2_gen_reg'),
                           tf.get_collection('l2_con_reg'),
-                          tf.get_collection('l2_readin_reg'),
-                          tf.get_collection('l2_readout_reg')]
-      l2_reg_scales = [self.hps.l2_gen_scale, self.hps.l2_con_scale]
+                          self.l2_readin_reg,
+                          self.l2_readout_reg]
+      l2_reg_scales = [self.hps.l2_gen_scale, self.hps.l2_con_scale,
+                       self.hps.l2_readin_scale, self.hps.l2_readout_scale]
       for l2_reg_vars, l2_scale in zip(l2_reg_var_lists, l2_reg_scales):
         for v in l2_reg_vars:
           numel = tf.reduce_prod(tf.concat(axis=0, values=tf.shape(v)))
