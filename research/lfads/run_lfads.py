@@ -464,6 +464,8 @@ def build_model(hps, kind="train", datasets=None, shared_data=None):
   if build_kind == "write_model_params":
     build_kind = "train"
   with tf.variable_scope("LFADS", reuse=None):
+    print("Constructing LFADS TF graph")
+    sys.stdout.flush()
     model = LFADS(hps, kind=build_kind, datasets=datasets, shared_data=shared_data)
 
   if not os.path.exists(hps.lfads_save_dir):
