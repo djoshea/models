@@ -680,7 +680,7 @@ class LFADS(object):
 
         # and multiply in shared fxs matrix with session specific sxc
         # add the case'd matrix to l2_readout_reg so it is regularized below
-        this_out_fac_W_session = tf.case(pf_pairs_out_fac_Ws, exclusive=True, collections='l2_readout_reg')
+        this_out_fac_W_session = tf.case(pf_pairs_out_fac_Ws, exclusive=True)
         this_out_fac_W = tf.matmul(Wshared, this_out_fac_W_session,
                                    name="shared_fxs_times_session_sxc")
         this_out_fac_b = tf.case(pf_pairs_out_fac_bs, exclusive=False)
