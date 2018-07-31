@@ -495,7 +495,6 @@ class LFADS(object):
         # for regularization only
         this_in_fac_W1 = tf.case(pf_pairs_in_fac_W1s, exclusive=True)
         this_in_fac_W2 = tf.case(pf_pairs_in_fac_W2s, exclusive=True)
-
         self.l2_readin_reg = [this_in_fac_W1, this_in_fac_W2]
 
     else: # not do_subpop_readin
@@ -638,7 +637,7 @@ class LFADS(object):
         # first stage is shared
         # add to l2_readout_reg so it is regularized below
         Wshared, _, _ = two_stage_masked_linear(W1=readout_matrix_fxs,
-            W1name='shared_readout_fxs', normalized=True,
+            W1name='shared_readout_fxs', normalized=False,
             collections=['IO_transformations',],
             trainable=True)
 
@@ -664,7 +663,7 @@ class LFADS(object):
                         bias=out_bias_1xc,
                         W1name="W_sxc_ds%d" % (d,),
                         biasname="bias_1xc_ds%d" % (d,),
-                        normalized=True, collections=['IO_transformations'],
+                        normalized=False, collections=['IO_transformations'],
                         trainable=True)
 
           out_fac_W = W_sxc
