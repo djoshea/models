@@ -624,14 +624,14 @@ class LFADS(object):
               raise ValueError("readout_matrix_sxc must be zero where \
                 readout_matrix_sxc_mask is False for dataset %s"%(name,))
 
-          if 'bias_c' not in dataset.keys():
-            raise ValueError("bias_c not found for dataset ", name)
-          bias_c = dataset['bias_c'].astype(np.float32)
-          if bias_c.shape != (data_dim,):
-            raise ValueError("""bias_c for dataset %s must have \
+          if 'out_bias_c' not in dataset.keys():
+            raise ValueError("out_bias_c not found for dataset ", name)
+          out_bias_c = dataset['out_bias_c'].astype(np.float32)
+          if out_bias_c.shape != (data_dim,):
+            raise ValueError("""out_bias_c for dataset %s must have \
                 dimensions %d (data_dim), but \
                 currently has %d."""%
-                (name, data_dim, bias_c.shape[0]))
+                (name, data_dim, out_bias_c.shape[0]))
 
         # two stage readout
         # first stage is shared
@@ -645,13 +645,13 @@ class LFADS(object):
           dataset = datasets[name]
           readout_matrix_sxc = dataset['readout_matrix_sxc'].astype(np.float32)
           readout_matrix_sxc_mask = dataset['readout_matrix_sxc_mask'].astype(np.bool)
-          bias_c = dataset['bias_c'].astype(np.float32)
+          out_bias_c = dataset['out_bias_c'].astype(np.float32)
 
           # data * W1 * W2 + b
           # initialize with transpose of readin matrices
           out_mat_sxc = readout_matrix_sxc
           out_mat_sxc_mask = readout_matrix_sxc_mask
-          out_bias_1xc = np.expand_dims(bias_c, axis=0)
+          out_bias_1xc = np.expand_dims(out_bias_c, axis=0)
 
           if hps.output_dist != 'poisson':
             raise ValueError("Two stage readout only supported for Poisson \
