@@ -692,7 +692,7 @@ def write_model_runs(hps, datasets, shared_data=None, output_fname=None, push_me
       the trained model. False is used for posterior_sample_and_average, True
       is used for posterior_push_mean.
   """
-  model = build_model(hps, kind=hps.kind, datasets=datasets, shared_data=None)
+  model = build_model(hps, kind=hps.kind, datasets=datasets, shared_data=shared_data)
   model.write_model_runs(datasets, output_fname, push_mean)
 
 
