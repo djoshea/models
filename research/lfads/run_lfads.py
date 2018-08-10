@@ -837,6 +837,7 @@ def read_shared_data(data_path):
   """
 
   filename = os.path.join(data_path, 'shared_data.h5')
+  print("Loading shared data from shared_data.h5")
   if os.path.exists(filename):
     return utils.read_data(filename)
   else:
@@ -917,7 +918,7 @@ def main(_):
   if not FLAGS.tf_debug_dump_root:
     tf_debug_dump_root = None # use default if not specified
   else:
-    tf_debug_dump_root = FLAGS.tf_debug_dump_root 
+    tf_debug_dump_root = FLAGS.tf_debug_dump_root
 
   if FLAGS.tf_debug_tensorboard:
     print("Using Tensorboard GUI debugger at " + FLAGS.tf_debug_tensorboard_hostport)
