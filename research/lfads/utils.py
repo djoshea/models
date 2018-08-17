@@ -174,7 +174,8 @@ def init_linear(in_size, out_size, do_bias=True, mat_init_value=None,
 
 def two_stage_masked_linear(W1, mask1=None, W2=None, mask2=None, bias=None,
                             W1name="W1", W2name="W2", biasname="b",
-                            normalized=False, collections=None,
+                            W1normalized=False, W2normalized=False,
+                            collections=None,
                             trainable=True):
   """Two-stage (affine) factorized transformation with masked weights
 
@@ -193,7 +194,7 @@ def two_stage_masked_linear(W1, mask1=None, W2=None, mask2=None, bias=None,
   """
 
   W1dtype = W1.dtype
-  if normalized:
+  if W1normalized:
     w_collections = [tf.GraphKeys.GLOBAL_VARIABLES, "norm-variables"]
     if collections:
       w_collections += collections
@@ -219,7 +220,7 @@ def two_stage_masked_linear(W1, mask1=None, W2=None, mask2=None, bias=None,
 
   if W2 is not None:
     W2dtype = W2.dtype
-    if normalized:
+    if W2normalized:
       w_collections = [tf.GraphKeys.GLOBAL_VARIABLES, "norm-variables"]
       if collections:
         w_collections += collections

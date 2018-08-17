@@ -427,7 +427,7 @@ class LFADS(object):
                             readin_matrix_sxf.shape[0],
                             readin_matrix_sxf.shape[1]))
 
-      with tf.variable_scope("subpopulation_readin"):
+      with tf.variable_scope("subpopulation_readin", reuse=False):
         # first construct rates --> subpop factors
         for d, name in enumerate(dataset_names):
           data_dim = hps.dataset_dims[name]
@@ -465,10 +465,11 @@ class LFADS(object):
                         W2=readin_matrix_sxf,
                         mask2=None,
                         bias=in_bias_1xf,
-                        W1name="W_cxs_ds%d"%(d,),
-                        W2name="W_sxf_ds%d"%(d,),
-                        biasname="bias_1xf_ds%d"%(d,),
-                        normalized=False,
+                        W1name="W_cxs_"+name,
+                        W2name="W_sxf_"+name,
+                        biasname="bias_1xf_"+name,
+                        W1normalized=False,
+                        W2normalized=True,
                         collections=collections_readin,
                         trainable=hps.do_train_readin)
 
@@ -495,11 +496,12 @@ class LFADS(object):
         # for regularization only
         this_in_fac_W1 = tf.case(pf_pairs_in_fac_W1s, exclusive=True)
         this_in_fac_W2 = tf.case(pf_pairs_in_fac_W2s, exclusive=True)
-        self.l2_readin_reg = [this_in_fac_W1, this_in_fac_W2]
+        # self.l2_readin_reg = [this_in_fac_W1, this_in_fac_W2]
+        self.l2_readin_reg = [this_in_fac_W1, ]  # W2 now normalized
 
     else: # not do_subpop_readin
       # original one stage readin matrices from neurons --> in factors
-      with tf.variable_scope("readin"):
+      with tf.variable_scope("readin", reuse=False):
         for d, name in enumerate(dataset_names):
           data_dim = hps.dataset_dims[name]
           in_mat_cxf = None
@@ -572,7 +574,7 @@ class LFADS(object):
           this_in_fac_W = tf.case(pf_pairs_in_fac_Ws, exclusive=False)
           this_in_fac_b = tf.case(pf_pairs_in_fac_bs, exclusive=False)
 
-    with tf.variable_scope("glm"):
+    with tf.variable_scope("glm", reuse=False):
       if hps.do_subpop_readout:
         # check sizes of shared data
         if shared_data is None or 'readout_matrix_fxs' not in shared_data:
@@ -637,7 +639,7 @@ class LFADS(object):
         # first stage is shared
         # add to l2_readout_reg so it is regularized below
         Wshared, _, _ = two_stage_masked_linear(W1=readout_matrix_fxs,
-            W1name='shared_readout_fxs', normalized=False,
+            W1name='shared_readout_fxs', W1normalized=True,
             collections=['IO_transformations',],
             trainable=True)
 
@@ -661,9 +663,9 @@ class LFADS(object):
                         W1=out_mat_sxc,
                         mask1=out_mat_sxc_mask,
                         bias=out_bias_1xc,
-                        W1name="W_sxc_ds%d" % (d,),
-                        biasname="bias_1xc_ds%d" % (d,),
-                        normalized=False, collections=['IO_transformations'],
+                        W1name="W_sxc_"+name,
+                        biasname="bias_1xc_"+name,
+                        W1normalized=False, collections=['IO_transformations'],
                         trainable=True)
 
           out_fac_W = W_sxc
@@ -684,7 +686,8 @@ class LFADS(object):
                                    name="shared_fxs_times_session_sxc")
         this_out_fac_b = tf.case(pf_pairs_out_fac_bs, exclusive=False)
 
-        self.l2_readout_reg = [Wshared, this_out_fac_W_session]
+        # self.l2_readout_reg = [Wshared, this_out_fac_W_session]
+        self.l2_readout_reg = [this_out_fac_W_session, ]  # Wshared normalized now
 
       else:
         # original one stage readout
