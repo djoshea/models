@@ -443,6 +443,7 @@ flags.DEFINE_string("tf_debug_dump_root", TF_DEBUG_DUMP_ROOT, "Location to dump 
 flags.DEFINE_boolean("debug_verbose", DEBUG_VERBOSE, "Whether to print verbose debugging information")
 flags.DEFINE_integer("debug_reduce_timesteps_to", DEBUG_REDUCE_TIMESTEPS_TO, "For debugging, artificially keep only this many timesteps to reduce graph size")
 flags.DEFINE_boolean("debug_print_each_step", DEBUG_PRINT_EACH_STEP, "Whether to print a message after each step (in addition to each epoch)")
+flags.DEFINE_boolean("debug_save_each_epoch", DEBUG_SAVE_EACH_EPOCH, "Whether to save parameters and push means on EVERY epoch (very slow)")
 
 FLAGS = flags.FLAGS
 
@@ -637,6 +638,7 @@ def build_hyperparameter_dict(flags):
   d['debug_verbose'] = flags.debug_verbose
   d['debug_reduce_timesteps_to'] = flags.debug_reduce_timesteps_to
   d['debug_print_each_step'] = flags.debug_print_each_step
+  d['debug_save_each_epoch'] = flags.debug_save_each_epoch
 
   return d
 

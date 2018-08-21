@@ -1807,6 +1807,25 @@ class LFADS(object):
     lowest_ev_cost = np.Inf
     while True:
       i += 1
+      
+      if hps.debug_save_each_epoch:
+        # save model push mean and  model train params on EVERY epoch
+        # only useful for debugging
+        print("Saving posterior_push_mean")
+        sys.stdout.flush()
+        self, datasets, shared_data=None, output_fname=None, push_mean=False):
+        model.write_model_runs(datasets, hps.output_filename_stem + "_epoch_" + i, push_mean=True)
+
+        fname_end = "model_params_epoch_" + i + ".h5"
+        fname = os.path.join(hps.lfads_save_dir, fname_end)
+        print("Writing model parameters to: ", fname_end)
+        sys.stdout.flush()
+
+         # save the optimizer params as well
+        model_params = model.eval_model_parameters(use_nested=False,
+                                                   include_strs="LFADS")
+        utils.write_data(fname, model_params, compression=None)
+
       do_save_ckpt = True if i % 10 == 0 else False
       tr_total_cost, tr_recon_cost, tr_kl_cost, kl_weight, l2_cost, l2_weight = \
                 self.train_epoch(datasets, do_save_ckpt=do_save_ckpt)
