@@ -114,7 +114,7 @@ TF_DEBUG_DUMP_ROOT = ''
 DEBUG_VERBOSE = False
 DEBUG_REDUCE_TIMESTEPS_TO = None
 DEBUG_PRINT_EACH_STEP = False
-
+DEBUG_SAVE_EACH_EPOCH = False
 flags = tf.app.flags
 flags.DEFINE_string("kind", "train",
                     "Type of model to build {train, \

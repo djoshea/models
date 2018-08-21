@@ -1776,7 +1776,7 @@ class LFADS(object):
     example_summ = session.run(self.merged_examples,
                                feed_dict={self.example_image : example_image})
     self.writer.add_summary(example_summ)
-s
+
   def train_model(self, datasets):
     """Train the model, print per-epoch information, and save checkpoints.
 
