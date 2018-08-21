@@ -473,6 +473,9 @@ class LFADS(object):
                         collections=collections_readin,
                         trainable=hps.do_train_readin)
 
+          fns_in_fac_W1s[d] = makelambda(W1m)  # used for regularization
+          fns_in_fac_W2s[d] = makelambda(W2m)  # used for regularization
+
           in_fac_W = tf.matmul(W1m, W2m,
                                name="W_cxs_masked_times_W_sxf_ds%d"%(d,))
           in_fac_b = bias
@@ -481,12 +484,18 @@ class LFADS(object):
           fns_in_fac_bs[d] = makelambda(in_fac_b)
           preds[d] = tf.equal(tf.constant(name), self.dataName)
 
+        pf_pairs_in_fac_W1s = zip(preds, fns_in_fac_W1s)  # used for regularization
+        pf_pairs_in_fac_W2s = zip(preds, fns_in_fac_W2s)  # used for regularization
         pf_pairs_in_fac_Ws = zip(preds, fns_in_fac_Ws)
         pf_pairs_in_fac_bs = zip(preds, fns_in_fac_bs)
 
         # add the case'd readin matrix to l2_readin_reg collection so it is regularized below
         this_in_fac_W = tf.case(pf_pairs_in_fac_Ws, exclusive=True)
         this_in_fac_b = tf.case(pf_pairs_in_fac_bs, exclusive=True)
+
+        # for regularization only
+        this_in_fac_W1 = tf.case(pf_pairs_in_fac_W1s, exclusive=True)
+        this_in_fac_W2 = tf.case(pf_pairs_in_fac_W2s, exclusive=True)
 
         # self.l2_readin_reg = [this_in_fac_W1, this_in_fac_W2]
         self.l2_readin_reg = [this_in_fac_W1, ]  # W2 now normalized
