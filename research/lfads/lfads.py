@@ -1776,7 +1776,7 @@ class LFADS(object):
     example_summ = session.run(self.merged_examples,
                                feed_dict={self.example_image : example_image})
     self.writer.add_summary(example_summ)
-
+s
   def train_model(self, datasets):
     """Train the model, print per-epoch information, and save checkpoints.
 
@@ -1813,7 +1813,6 @@ class LFADS(object):
         # only useful for debugging
         print("Saving posterior_push_mean")
         sys.stdout.flush()
-        self, datasets, shared_data=None, output_fname=None, push_mean=False):
         model.write_model_runs(datasets, hps.output_filename_stem + "epoch_" + i, push_mean=True)
 
         fname_end = "model_params_epoch_" + i + ".h5"
