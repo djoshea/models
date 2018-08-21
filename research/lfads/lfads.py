@@ -473,9 +473,6 @@ class LFADS(object):
                         collections=collections_readin,
                         trainable=hps.do_train_readin)
 
-          fns_in_fac_W1s[d] = makelambda(W1m)
-          fns_in_fac_W2s[d] = makelambda(W2m)
-
           in_fac_W = tf.matmul(W1m, W2m,
                                name="W_cxs_masked_times_W_sxf_ds%d"%(d,))
           in_fac_b = bias
@@ -484,8 +481,6 @@ class LFADS(object):
           fns_in_fac_bs[d] = makelambda(in_fac_b)
           preds[d] = tf.equal(tf.constant(name), self.dataName)
 
-        pf_pairs_in_fac_W1s = zip(preds, fns_in_fac_W1s)
-        pf_pairs_in_fac_W2s = zip(preds, fns_in_fac_W2s)
         pf_pairs_in_fac_Ws = zip(preds, fns_in_fac_Ws)
         pf_pairs_in_fac_bs = zip(preds, fns_in_fac_bs)
 
@@ -493,9 +488,6 @@ class LFADS(object):
         this_in_fac_W = tf.case(pf_pairs_in_fac_Ws, exclusive=True)
         this_in_fac_b = tf.case(pf_pairs_in_fac_bs, exclusive=True)
 
-        # for regularization only
-        this_in_fac_W1 = tf.case(pf_pairs_in_fac_W1s, exclusive=True)
-        this_in_fac_W2 = tf.case(pf_pairs_in_fac_W2s, exclusive=True)
         # self.l2_readin_reg = [this_in_fac_W1, this_in_fac_W2]
         self.l2_readin_reg = [this_in_fac_W1, ]  # W2 now normalized
 
@@ -805,9 +797,11 @@ class LFADS(object):
       if forward_or_reverse == "forward":
         dstr = "_fwd"
         time_fwd_or_rev = range(num_steps_to_encode)
+        self.in_factors_fwd = in_factors = [None] * num_steps_to_encode
       else:
         dstr = "_rev"
         time_fwd_or_rev = reversed(range(num_steps_to_encode))
+        self.in_factors_rev = in_factors = [None] * num_steps_to_encode
 
       with tf.variable_scope(name+"_enc"+dstr, reuse=False):
         enc_state = tf.tile(
@@ -821,6 +815,7 @@ class LFADS(object):
           dataset_t_bxd = dataset_bxtxd[:,t,:]
           in_fac_t_bxf = tf.matmul(dataset_t_bxd, this_in_fac_W) + this_in_fac_b
           in_fac_t_bxf.set_shape([None, used_in_factors_dim])
+          in_factors[i] = in_fac_t_bxf
           if ext_input_dim > 0 and not hps.inject_ext_input_to_gen:
             ext_input_t_bxi = ext_input_do_bxtxi[:,t,:]
             enc_input_t_bxfpe = tf.concat(
@@ -831,6 +826,7 @@ class LFADS(object):
           enc_outs[t] = enc_out
 
       return enc_outs
+
 
     # Encode initial condition means and variances
     # ([x_T, x_T-1, ... x_0] and [x_0, x_1, ... x_T] -> g0/c0)
@@ -1963,6 +1959,7 @@ class LFADS(object):
     ff = 0
     gen_ics = [np_vals_flat[f] for f in fidxs[ff]]; ff += 1
     gen_states = [np_vals_flat[f] for f in fidxs[ff]]; ff += 1
+    in_factors = [np_vals_flat[f] for f in fidxs[ff]]; ff += 1
     factors = [np_vals_flat[f] for f in fidxs[ff]]; ff += 1
     out_dist_params = [np_vals_flat[f] for f in fidxs[ff]]; ff += 1
     costs = [np_vals_flat[f] for f in fidxs[ff]]; ff += 1
@@ -1986,6 +1983,7 @@ class LFADS(object):
 
     # Convert to full tensors, not lists of tensors in time dim.
     gen_states = list_t_bxn_to_tensor_bxtxn(gen_states)
+    in_factors = list_t_bxn_to_tensor_bxtxn(in_factors)
     factors = list_t_bxn_to_tensor_bxtxn(factors)
     out_dist_params = list_t_bxn_to_tensor_bxtxn(out_dist_params)
     if self.hps.ic_dim > 0:
@@ -2002,6 +2000,7 @@ class LFADS(object):
       idx = np.arange(E)
       gen_ics = gen_ics[idx, :]
       gen_states = gen_states[idx, :]
+      in_factors = in_factors[idx, :, :]
       factors = factors[idx, :, :]
       out_dist_params = out_dist_params[idx, :, :]
       if self.hps.ic_dim > 0:
@@ -2015,6 +2014,7 @@ class LFADS(object):
     if do_average_batch:
       gen_ics = np.mean(gen_ics, axis=0)
       gen_states = np.mean(gen_states, axis=0)
+      in_factors = np.mean(in_factors, axis=0)
       factors = np.mean(factors, axis=0)
       out_dist_params = np.mean(out_dist_params, axis=0)
       if self.hps.ic_dim > 0:
@@ -2028,6 +2028,7 @@ class LFADS(object):
     model_vals = {}
     model_vals['gen_ics'] = gen_ics
     model_vals['gen_states'] = gen_states
+    model_vals['in_factors'] = in_factors
     model_vals['factors'] = factors
     model_vals['output_dist_params'] = out_dist_params
     model_vals['costs'] = costs
@@ -2084,6 +2085,7 @@ class LFADS(object):
       controller_outputs = np.zeros([E_to_process, T, hps.co_dim])
     gen_ics = np.zeros([E_to_process, hps.gen_dim])
     gen_states = np.zeros([E_to_process, T, hps.gen_dim])
+    in_factors = np.zeros([E_to_process, T, hps.factors_dim])
     factors = np.zeros([E_to_process, T, hps.factors_dim])
 
     if hps.output_dist == 'poisson':
@@ -2119,6 +2121,7 @@ class LFADS(object):
       if self.hps.co_dim > 0:
         controller_outputs[es_idx,:,:] = model_values['controller_outputs']
       gen_states[es_idx,:,:] = model_values['gen_states']
+      in_factors[es_idx,:,:] = model_values['in_factors']
       factors[es_idx,:,:] = model_values['factors']
       out_dist_params[es_idx,:,:] = model_values['output_dist_params']
       costs[es_idx] = model_values['costs']
@@ -2139,6 +2142,7 @@ class LFADS(object):
     if self.hps.co_dim > 0:
       model_runs['controller_outputs'] = controller_outputs
     model_runs['gen_states'] = gen_states
+    model_runs['in_factors'] = in_factors
     model_runs['factors'] = factors
     model_runs['output_dist_params'] = out_dist_params
     model_runs['costs'] = costs
@@ -2193,6 +2197,7 @@ class LFADS(object):
       controller_outputs = np.zeros([E_to_process, T, hps.co_dim])
     gen_ics = np.zeros([E_to_process, hps.gen_dim])
     gen_states = np.zeros([E_to_process, T, hps.gen_dim])
+    in_factors = np.zeros([E_to_process, T, hps.factors_dim])
     factors = np.zeros([E_to_process, T, hps.factors_dim])
 
     if hps.output_dist == 'poisson':
@@ -2237,6 +2242,7 @@ class LFADS(object):
       if self.hps.co_dim > 0:
         controller_outputs[es_idx,:,:] = model_values['controller_outputs']
       gen_states[es_idx,:,:] = model_values['gen_states']
+      in_factors[es_idx,:,:] = model_values['in_factors']
       factors[es_idx,:,:] = model_values['factors']
       out_dist_params[es_idx,:,:] = model_values['output_dist_params']
 
@@ -2260,6 +2266,7 @@ class LFADS(object):
     if self.hps.co_dim > 0:
       model_runs['controller_outputs'] = controller_outputs
     model_runs['gen_states'] = gen_states
+    model_runs['in_factors'] = in_factors
     model_runs['factors'] = factors
     model_runs['output_dist_params'] = out_dist_params
 
@@ -2341,7 +2348,7 @@ class LFADS(object):
     batch_size = hps.batch_size
 
     print("Generating %d samples" % (batch_size))
-    tf_vals = [self.factors, self.gen_states, self.gen_ics,
+    tf_vals = [self.in_factors, self.factors, self.gen_states, self.gen_ics,
                self.cost, self.output_dist_params]
     if hps.ic_dim > 0:
       tf_vals += [self.prior_zs_g0.mean, self.prior_zs_g0.logvar]
@@ -2357,6 +2364,7 @@ class LFADS(object):
     np_vals_flat = session.run(tf_vals_flat, feed_dict=feed_dict)
 
     ff = 0
+    in_factors = [np_vals_flat[f] for f in fidxs[ff]]; ff += 1
     factors = [np_vals_flat[f] for f in fidxs[ff]]; ff += 1
     gen_states = [np_vals_flat[f] for f in fidxs[ff]]; ff += 1
     gen_ics = [np_vals_flat[f] for f in fidxs[ff]]; ff += 1
@@ -2373,6 +2381,7 @@ class LFADS(object):
     costs = costs[0]
 
     # Convert to full tensors, not lists of tensors in time dim.
+    in_factors = list_t_bxn_to_tensor_bxtxn(in_factors)
     gen_states = list_t_bxn_to_tensor_bxtxn(gen_states)
     factors = list_t_bxn_to_tensor_bxtxn(factors)
     output_dist_params = list_t_bxn_to_tensor_bxtxn(output_dist_params)
@@ -2383,6 +2392,7 @@ class LFADS(object):
       prior_zs_ar_con = list_t_bxn_to_tensor_bxtxn(prior_zs_ar_con)
 
     model_vals = {}
+    model_vals['in_factors'] = in_factors
     model_vals['gen_ics'] = gen_ics
     model_vals['gen_states'] = gen_states
     model_vals['factors'] = factors
