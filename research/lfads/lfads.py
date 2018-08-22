@@ -1833,7 +1833,7 @@ class LFADS(object):
         sys.stdout.flush()
         # only save means for a few datasets
         if len(datasets) > 4:
-          dataset_part = datasets[0:4]
+          dataset_part = take(4, datasets.iteritems())
         else:
           dataset_part = datasets
         self.write_model_runs(dataset_part, hps.output_filename_stem + ("epoch_%d_" % (i,)), push_mean=True)
@@ -2465,7 +2465,8 @@ class LFADS(object):
       dictionary, or a nested dictionary, where the nesting is by variable
       scope.
     """
-    all_tf_vars = tf.global_variables()
+    # all_tf_vars = tf.global_variables()
+    all_tf_vars = tf.trainable_variables()
     session = tf.get_default_session()
     all_tf_vars_eval = session.run(all_tf_vars)
     vars_dict = {}
