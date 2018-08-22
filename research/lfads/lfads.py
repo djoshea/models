@@ -74,6 +74,7 @@ from distributions import KLCost_GaussianGaussianProcessSampled
 from utils import init_linear, linear, list_t_bxn_to_tensor_bxtxn, write_data
 from utils import clip_exp, log_sum_exp, flatten
 from utils import two_stage_masked_linear
+from utils import write_data
 from plot_lfads import plot_lfads
 
 
@@ -806,11 +807,9 @@ class LFADS(object):
       if forward_or_reverse == "forward":
         dstr = "_fwd"
         time_fwd_or_rev = range(num_steps_to_encode)
-        self.in_factors_fwd = in_factors = [None] * num_steps_to_encode
       else:
         dstr = "_rev"
         time_fwd_or_rev = reversed(range(num_steps_to_encode))
-        self.in_factors_rev = in_factors = [None] * num_steps_to_encode
 
       with tf.variable_scope(name+"_enc"+dstr, reuse=False):
         enc_state = tf.tile(
@@ -824,7 +823,6 @@ class LFADS(object):
           dataset_t_bxd = dataset_bxtxd[:,t,:]
           in_fac_t_bxf = tf.matmul(dataset_t_bxd, this_in_fac_W) + this_in_fac_b
           in_fac_t_bxf.set_shape([None, used_in_factors_dim])
-          in_factors[i] = in_fac_t_bxf
           if ext_input_dim > 0 and not hps.inject_ext_input_to_gen:
             ext_input_t_bxi = ext_input_do_bxtxi[:,t,:]
             enc_input_t_bxfpe = tf.concat(
@@ -836,6 +834,17 @@ class LFADS(object):
 
       return enc_outs
 
+
+    # Setup input factors purely for generating the posterior means
+    time_fwd = range(num_steps)
+    self.in_factors = [None] * num_steps
+
+    with tf.variable_scope("in_factors", reuse=True):
+      for i, t in enumerate(time_fwd):
+        dataset_t_bxd = dataset_do_bxtxd[:, t, :]
+        in_fac_t_bxf = tf.matmul(dataset_t_bxd, this_in_fac_W) + this_in_fac_b
+        in_fac_t_bxf.set_shape([None, used_in_factors_dim])
+        self.in_factors[i] = in_fac_t_bxf
 
     # Encode initial condition means and variances
     # ([x_T, x_T-1, ... x_0] and [x_0, x_1, ... x_T] -> g0/c0)
@@ -1832,7 +1841,7 @@ class LFADS(object):
          # save the optimizer params as well
         model_params = self.eval_model_parameters(use_nested=False,
                                                    include_strs="LFADS")
-        utils.write_data(fname, model_params, compression=None)
+        write_data(fname, model_params, compression=None)
 
       do_save_ckpt = True if i % 10 == 0 else False
       tr_total_cost, tr_recon_cost, tr_kl_cost, kl_weight, l2_cost, l2_weight = \

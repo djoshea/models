@@ -280,10 +280,10 @@ def write_data(data_fname, data_dict, use_json=False, compression=None):
       with h5py.File(data_fname, 'w') as hf:
         for k, v in data_dict.items():
           clean_k = k.replace('/', '_')
-          if clean_k is not k:
-            print('Warning: saving variable with name: ', k, ' as ', clean_k)
-          else:
-            print('Saving variable with name: ', clean_k)
+          # if clean_k is not k:
+            # print('Warning: saving variable with name: ', k, ' as ', clean_k)
+          # else:
+            # print('Saving variable with name: ', clean_k)
           hf.create_dataset(clean_k, data=v, compression=compression)
     except IOError:
       print("Cannot open %s for writing.", data_fname)
