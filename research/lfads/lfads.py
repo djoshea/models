@@ -1831,7 +1831,12 @@ class LFADS(object):
         # only useful for debugging
         print("Saving posterior_push_mean")
         sys.stdout.flush()
-        self.write_model_runs(datasets, hps.output_filename_stem + ("epoch_%d" % (i,)), push_mean=True)
+        # only save means for a few datasets
+        if len(datasets) > 4:
+          dataset_part = datasets[0:4]
+        else:
+          dataset_part = datasets
+        self.write_model_runs(dataset_part, hps.output_filename_stem + ("epoch_%d" % (i,)), push_mean=True)
 
         fname_end = "model_params_epoch_%d.h5" % (i,)
         fname = os.path.join(hps.lfads_save_dir, fname_end)
