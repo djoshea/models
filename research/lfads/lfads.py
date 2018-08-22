@@ -1822,7 +1822,7 @@ class LFADS(object):
         # only useful for debugging
         print("Saving posterior_push_mean")
         sys.stdout.flush()
-        model.write_model_runs(datasets, hps.output_filename_stem + "epoch_" + i, push_mean=True)
+        self.write_model_runs(datasets, hps.output_filename_stem + "epoch_" + i, push_mean=True)
 
         fname_end = "model_params_epoch_" + i + ".h5"
         fname = os.path.join(hps.lfads_save_dir, fname_end)
@@ -1830,7 +1830,7 @@ class LFADS(object):
         sys.stdout.flush()
 
          # save the optimizer params as well
-        model_params = model.eval_model_parameters(use_nested=False,
+        model_params = self.eval_model_parameters(use_nested=False,
                                                    include_strs="LFADS")
         utils.write_data(fname, model_params, compression=None)
 
