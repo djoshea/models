@@ -1836,7 +1836,7 @@ class LFADS(object):
           dataset_part = datasets[0:4]
         else:
           dataset_part = datasets
-        self.write_model_runs(dataset_part, hps.output_filename_stem + ("epoch_%d" % (i,)), push_mean=True)
+        self.write_model_runs(dataset_part, hps.output_filename_stem + ("epoch_%d_" % (i,)), push_mean=True)
 
         fname_end = "model_params_epoch_%d.h5" % (i,)
         fname = os.path.join(hps.lfads_save_dir, fname_end)
