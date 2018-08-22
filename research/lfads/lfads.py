@@ -2314,7 +2314,7 @@ class LFADS(object):
     model_runs['train_steps'] = train_steps
     return model_runs
 
-  def write_model_runs(self, datasets, shared_data=None, output_fname=None, push_mean=False):
+  def write_model_runs(self, datasets, output_fname=None, push_mean=False):
     """Run the model on the data in data_dict, and save the computed values.
 
     LFADS generates a number of outputs for each examples, and these are all
