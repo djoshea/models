@@ -1968,8 +1968,8 @@ class LFADS(object):
 
     # Non-temporal signals will be batch x dim.
     # Temporal signals are list length T with elements batch x dim.
-    tf_vals = [self.gen_ics, self.gen_states, self.factors,
-               self.output_dist_params]
+    tf_vals = [self.gen_ics, self.gen_states, self.in_factors,
+               self.factors, self.output_dist_params]
     tf_vals.append(self.cost)
     tf_vals.append(self.nll_bound_vae)
     tf_vals.append(self.nll_bound_iwae)
