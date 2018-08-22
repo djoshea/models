@@ -77,7 +77,6 @@ from utils import two_stage_masked_linear
 from utils import write_data
 from plot_lfads import plot_lfads
 
-
 class GRU(object):
   """Gated Recurrent Unit cell (cf. http://arxiv.org/abs/1406.1078).
 
@@ -1833,7 +1832,7 @@ class LFADS(object):
         sys.stdout.flush()
         # only save means for a few datasets
         if len(datasets) > 4:
-          dataset_part = take(4, datasets.iteritems())
+          dataset_part = {k: datasets[k] for k in datasets.keys()[:4]}
         else:
           dataset_part = datasets
         self.write_model_runs(dataset_part, hps.output_filename_stem + ("epoch_%d_" % (i,)), push_mean=True)
