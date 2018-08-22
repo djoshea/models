@@ -477,12 +477,15 @@ def build_model(hps, kind="train", datasets=None, shared_data=None):
   cp_pb_ln = 'checkpoint' if cp_pb_ln == "" else cp_pb_ln
   if cp_pb_ln == 'checkpoint':
     print("Loading latest training checkpoint in: ", hps.lfads_save_dir)
+    sys.stdout.flush()
     saver = model.seso_saver
   elif cp_pb_ln == 'checkpoint_lve':
     print("Loading lowest validation checkpoint in: ", hps.lfads_save_dir)
+    sys.stdout.flush()
     saver = model.lve_saver
   else:
     print("Loading checkpoint: ", cp_pb_ln, ", in: ", hps.lfads_save_dir)
+    sys.stdout.flush()
     saver = model.seso_saver
 
   ckpt = tf.train.get_checkpoint_state(hps.lfads_save_dir,
@@ -492,6 +495,7 @@ def build_model(hps, kind="train", datasets=None, shared_data=None):
   print("ckpt: ", ckpt)
   if ckpt and tf.train.checkpoint_exists(ckpt.model_checkpoint_path):
     print("Reading model parameters from %s" % ckpt.model_checkpoint_path)
+    sys.stdout.flush()
     saver.restore(session, ckpt.model_checkpoint_path)
   else:
     print("Created model with fresh parameters.")
@@ -502,6 +506,7 @@ def build_model(hps, kind="train", datasets=None, shared_data=None):
       # cannot print ckpt.model_check_point path if no ckpt
       print("Are you sure you sure a checkpoint in ", hps.lfads_save_dir,
             " exists?")
+      sys.stdout.flush()
 
     tf.global_variables_initializer().run()
 
